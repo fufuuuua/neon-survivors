@@ -34,6 +34,8 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+  overscroll-behavior: none;     /* 禁止边缘回弹/联动滚动 */
+  touch-action: manipulation;    /* 禁用双击缩放（保留单击/滚动） */
 }
 
 #app {
@@ -135,6 +137,7 @@ html, body {
   background: radial-gradient(circle at 50% 50%, rgba(8,10,24,0.6), rgba(3,4,10,0.94));
   backdrop-filter: blur(2px);
   animation: fadeIn 0.35s ease;
+  touch-action: manipulation;    /* 界面层禁用双击缩放，保留点击与滚动 */
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -552,6 +555,10 @@ html, body {
   .gacha-bar { width: 100%; flex-direction: column; align-items: center; }
   .gacha-btn { width: min(92vw, 360px); }
   .gacha-result { width: 92vw; }
+
+  /* 机库界面：移动端整页向下滚动（取消网格内部嵌套滚动，避免双层滚动冲突） */
+  .screen.hangar-screen { justify-content: flex-start; }
+  .screen.hangar-screen .skin-grid { max-height: none; overflow: visible; }
 
   /* 菜单/结算按钮：大号竖排，触摸友好 */
   .menu-btns { width: 100%; flex-direction: column; align-items: center; gap: 12px; }

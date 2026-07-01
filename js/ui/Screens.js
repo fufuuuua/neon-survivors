@@ -71,7 +71,7 @@ export class Screens {
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
       </div>
       <div class="hint">${this.isTouch
-        ? "拖动屏幕移动 &nbsp;·&nbsp; 点击右上角按钮暂停<br>武器自动开火"
+        ? "拖动屏幕移动 · 点击右上角按钮暂停<br>武器自动开火"
         : "移动: W A S D / 方向键 &nbsp;·&nbsp; 暂停: P / ESC &nbsp;·&nbsp; 武器自动开火"}</div>
     `, "menu-screen");
     this.root.appendChild(el);
@@ -249,7 +249,7 @@ export class Screens {
       <div class="skin-grid"></div>
       <button class="btn btn-3" id="btn-back">← 返回</button>
       <div class="hint">每天可免费抽一次 · 重复抽取升星强化专属特性 · 满星后返还棱牌</div>
-    `);
+    `, "hangar-screen");
     const grid = el.querySelector(".skin-grid");
     for (const skin of Skins.list()) {
       const rar = RARITY[skin.rarity];
