@@ -4,6 +4,7 @@
  * 子弹↔敌人 经空间网格查询近邻，将复杂度从 O(子弹·敌人) 降到近似 O(子弹)。
  * 采用平方距离比较避免开方，性能友好。
  */
+import { CONFIG } from "../config.js";
 import { Vector2 } from "../utils/Vector2.js";
 import { DropType } from "../entities/XPGem.js";
 
@@ -92,17 +93,23 @@ export class CollisionSystem {
         game.particles.text(game.player.x, game.player.y - 30, "磁吸!", "#ffd23f");
         game.audio.levelup();
         break;
-      case DropType.BOMB:
-        // 清屏炸弹：对全场敌人造成大量伤害
+      case DropType.BOMB: {
+        // 湮灭：仅对玩家周围一定范围内的敌人造成大量伤害（非全屏）
+        const R = CONFIG.items.bombRadius;
+        const R2 = R * R;
         game.camera.shake(26);
         game.particles.burst(game.player.x, game.player.y, "#ff2bd6", 60, 500, 4, 0.8);
+        game.particles.ring(game.player.x, game.player.y, "#ff2bd6", R, 56, 3.4, 0.55); // 冲击波环：可视化波及范围
         for (const e of game.enemies) {
-          if (e.active && !e.isBoss) game.damageEnemy(e, 9999, false);
-          else if (e.active) game.damageEnemy(e, 300, false);
+          if (!e.active) continue;
+          if (Vector2.distSq(e, game.player) > R2) continue; // 范围外免疫
+          if (!e.isBoss) game.damageEnemy(e, 9999, false);
+          else game.damageEnemy(e, CONFIG.items.bombDamageBoss, false);
         }
         game.particles.text(game.player.x, game.player.y - 30, "湮灭!", "#ff2bd6");
         game.audio.nova();
         break;
+      }
     }
   }
 }

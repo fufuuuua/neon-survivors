@@ -95,6 +95,12 @@ export const CONFIG = Object.freeze({
     xpGrowth: 1.34,      // 每级经验增长系数
   },
 
+  // 拾取道具参数
+  items: {
+    bombRadius: 380,     // 湮灭：仅波及玩家周围此半径内的敌人（非全屏）
+    bombDamageBoss: 300, // 湮灭对范围内 Boss 的伤害
+  },
+
   fx: {
     shakeDecay: 5.5,
     maxParticles: 600,
@@ -105,6 +111,7 @@ export const CONFIG = Object.freeze({
 export const GameState = Object.freeze({
   MENU: "MENU",
   SHOP: "SHOP",
+  HANGAR: "HANGAR",
   PLAYING: "PLAYING",
   LEVELUP: "LEVELUP",
   PAUSED: "PAUSED",

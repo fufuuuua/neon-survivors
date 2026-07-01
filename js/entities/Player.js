@@ -6,7 +6,9 @@
  */
 import { CONFIG } from "../config.js";
 import { Vector2 } from "../utils/Vector2.js";
-import { TAU, clamp } from "../utils/math.js";
+import { TAU, clamp, rand } from "../utils/math.js";
+import { Skins } from "../systems/Skins.js";
+import { drawGlow } from "../core/GlowCache.js";
 
 export class Player {
   constructor() {
@@ -51,6 +53,10 @@ export class Player {
 
     this.moveDir = new Vector2();
     this.facing = new Vector2(0, -1);
+    this.animT = 0;           // 渲染动画计时（引擎尾焰/能量光环脉动）
+
+    // 当前外观（默认漂移者三角机，开局由 Skins.applyTo 覆盖为选中外观）
+    this.skin = { id: "drift", shape: "arrow", accent: "#00f0ff", star: 1 };
   }
 
   get alive() { return this.hp > 0; }
@@ -80,6 +86,7 @@ export class Player {
   update(dt, input, game) {
     if (this.invuln > 0) this.invuln -= dt;
     if (this.regen > 0) this.heal(this.regen * dt);
+    this.animT += dt;
 
     // 移动
     this.moveDir = input.getMoveVector();
@@ -87,7 +94,16 @@ export class Player {
       this.x += this.moveDir.x * this.speed * dt;
       this.y += this.moveDir.y * this.speed * dt;
       this.facing.copy(this.moveDir);
-      game.particles.trail(this.x, this.y, "#00f0ff", 2, 0.25);
+      // 引擎尾焰：从机尾向后定向喷射（方向性拖尾，强化“这是玩家”的辨识）
+      const c = this.skin.accent || "#00f0ff";
+      const rx = this.x - this.facing.x * this.radius;
+      const ry = this.y - this.facing.y * this.radius;
+      for (let i = 0; i < 2; i++) {
+        game.particles.spark(rx, ry,
+          -this.facing.x * 70 + rand(-30, 30),
+          -this.facing.y * 70 + rand(-30, 30),
+          rand(0.22, 0.4), c, rand(2, 3.4));
+      }
     }
     // 边界约束
     this.x = clamp(this.x, this.radius, CONFIG.world.width - this.radius);
@@ -208,6 +224,33 @@ export class Player {
   }
 
   // ---------------- 渲染 ----------------
+  /** 引擎尾焰：在机体本地坐标系（朝上 -y）机尾 +y 方向喷射的双层火焰 */
+  _drawEngineFlame(ctx, color) {
+    const r = this.radius;
+    const moving = this.moveDir.lengthSq > 0.001;
+    const flick = 0.7 + 0.3 * Math.sin(this.animT * 34);
+    const len = (moving ? 1.7 : 0.8) * flick;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    // 外焰
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.42, r * 0.6);
+    ctx.quadraticCurveTo(0, r * (0.9 + len), r * 0.42, r * 0.6);
+    ctx.closePath();
+    ctx.fill();
+    // 内焰（白热）
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.2, r * 0.58);
+    ctx.quadraticCurveTo(0, r * (0.72 + len * 0.7), r * 0.2, r * 0.58);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   render(ctx) {
     const a = this.weapons.aura;
     // 灼蚀场视觉
@@ -222,22 +265,25 @@ export class Player {
       ctx.restore();
     }
 
-    // 飞船本体（朝向移动方向的三角飞行器）
+    // 飞船本体（按当前外观造型绘制，朝向移动方向）
+    const baseColor = this.skin.accent || "#00f0ff";
+
+    // 玩家专属：脉动能量光环（敌人从不具备此特征，是最稳健的区分信号）
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const pulse = 0.5 + 0.5 * Math.sin(this.animT * 4);
+    ctx.globalAlpha = 0.10 + 0.05 * pulse;
+    drawGlow(ctx, baseColor, this.x, this.y, this.radius * (2.6 + 0.3 * pulse));
+    ctx.restore();
+
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(Math.atan2(this.facing.y, this.facing.x) + Math.PI / 2);
-    ctx.shadowBlur = 18;
-    ctx.shadowColor = this.invuln > 0 && Math.floor(this.invuln * 20) % 2 ? "#fff" : "#00f0ff";
-    ctx.fillStyle = ctx.shadowColor;
-    ctx.beginPath();
-    ctx.moveTo(0, -this.radius);
-    ctx.lineTo(this.radius * 0.8, this.radius);
-    ctx.lineTo(0, this.radius * 0.5);
-    ctx.lineTo(-this.radius * 0.8, this.radius);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#05060e";
-    ctx.beginPath(); ctx.arc(0, 0, this.radius * 0.28, 0, TAU); ctx.fill();
+    const flash = this.invuln > 0 && Math.floor(this.invuln * 20) % 2;
+    const color = flash ? "#ffffff" : baseColor;
+    // 引擎尾焰（机尾 +y 方向，移动时更长更亮）
+    this._drawEngineFlame(ctx, color);
+    Skins.drawShip(ctx, this.skin.shape, this.radius, color);
     ctx.restore();
 
     // 轨道核

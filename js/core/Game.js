@@ -30,6 +30,7 @@ import { SpawnSystem } from "../systems/SpawnSystem.js";
 import { CollisionSystem } from "../systems/CollisionSystem.js";
 import { UpgradeSystem } from "../systems/UpgradeSystem.js";
 import { MetaProgression } from "../systems/MetaProgression.js";
+import { Skins } from "../systems/Skins.js";
 
 import { HUD } from "../ui/HUD.js";
 import { Screens } from "../ui/Screens.js";
@@ -67,10 +68,11 @@ export class Game {
     this.state = GameState.MENU;
     this.stats = { time: 0, kills: 0, level: 1, bossKills: 0 };
     this._lastTime = 0;
-    this.boss = null;        // 当前存活的 Boss 引用（用于顶部血条）
+    this.bosses = [];        // 当前存活的 Boss 列表（可能同时存在多个，用于顶部血条）
     this.timeScale = 1;      // 时间缩放（慢动作演出）
     this.flash = 0;          // 全屏白闪强度 0..1
     this.beams = [];         // 瞬时电弧光束（电弧链武器）
+    this._runSaveTimer = 0;  // 对局快照自动保存节流计时
 
     // 元进度存档（跨局永久成长）
     this.save = SaveData.load();
@@ -80,6 +82,7 @@ export class Game {
     if (this.isTouch) this._createPauseButton();
 
     this._bindGlobalKeys();
+    this._bindAutoSave();
     this._setupCanvas();
     window.addEventListener("resize", () => this._setupCanvas());
 
@@ -137,11 +140,101 @@ export class Game {
     });
   }
 
+  /** 页面隐藏/关闭时立即落盘对局快照，避免刷新或切走后丢失当前进度 */
+  _bindAutoSave() {
+    const flush = () => {
+      if (this.state === GameState.PLAYING || this.state === GameState.PAUSED || this.state === GameState.LEVELUP) {
+        this._captureRun();
+      }
+    };
+    document.addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
+    window.addEventListener("pagehide", flush);
+  }
+
+  // ---------------- 对局快照（localStorage 续玩） ----------------
+
+  /** 将当前对局的玩家状态、统计与生成系统进度打包为纯 JSON 快照 */
+  _snapshotRun() {
+    const p = this.player;
+    const s = this.spawnSystem;
+    return {
+      player: {
+        hp: p.hp, maxHp: p.maxHp, speed: p.speed, pickupRange: p.pickupRange, regen: p.regen,
+        damageMul: p.damageMul, critChance: p.critChance, critMult: p.critMult,
+        cooldownMul: p.cooldownMul, damageReduction: p.damageReduction, xpMul: p.xpMul,
+        lifesteal: p.lifesteal, revives: p.revives, pendingLevels: p.pendingLevels,
+        level: p.level, xp: p.xp, xpToNext: p.xpToNext, x: p.x, y: p.y,
+        weapons: p.weapons, acquired: p.acquired, skin: p.skin,
+      },
+      stats: { ...this.stats },
+      spawn: {
+        timer: s.timer, interval: s.interval, batch: s.batch, hpScale: s.hpScale,
+        elapsed: s.elapsed, nextBoss: s.nextBoss, rampTimer: s.rampTimer, bossCount: s.bossCount,
+      },
+    };
+  }
+
+  /** 落盘当前对局快照 */
+  _captureRun() {
+    if (!this.player.alive) return;
+    SaveData.saveRun(this._snapshotRun());
+  }
+
+  /** 从快照恢复对局并进入游戏（场上敌人重置，难度按存活时长延续） */
+  _resumeRun() {
+    const rs = SaveData.loadRun();
+    if (!rs) { this.start(); return; }
+    this.audio.init();
+    this.player.reset();
+
+    // 套用快照中的玩家数值（逐字段校验，避免损坏数据污染状态）
+    const p = this.player, sp = rs.player;
+    const numKeys = ["hp", "maxHp", "speed", "pickupRange", "regen", "damageMul", "critChance",
+      "critMult", "cooldownMul", "damageReduction", "xpMul", "lifesteal", "revives",
+      "pendingLevels", "level", "xp", "xpToNext", "x", "y"];
+    for (const k of numKeys) {
+      const v = Number(sp[k]);
+      if (Number.isFinite(v)) p[k] = v;
+    }
+    if (sp.weapons && typeof sp.weapons === "object") p.weapons = JSON.parse(JSON.stringify(sp.weapons));
+    if (sp.acquired && typeof sp.acquired === "object") p.acquired = JSON.parse(JSON.stringify(sp.acquired));
+    if (sp.skin && typeof sp.skin === "object") p.skin = { ...p.skin, ...sp.skin };
+    p.invuln = 0;
+
+    // 清空场上实体（重开一片战场），难度进度由 spawnSystem 延续
+    this._enemyPool.clear();
+    this._projPool.clear();
+    this._ebPool.clear();
+    this._gemPool.clear();
+    this.particles.clear();
+    this.spawnSystem.reset();
+    Object.assign(this.spawnSystem, rs.spawn);
+
+    this.stats = {
+      time: Number(rs.stats.time) || 0,
+      kills: Math.max(0, Math.floor(Number(rs.stats.kills) || 0)),
+      level: Math.max(1, Math.floor(Number(rs.stats.level) || 1)),
+      bossKills: Math.max(0, Math.floor(Number(rs.stats.bossKills) || 0)),
+    };
+    this.bosses = [];
+    this.timeScale = 1;
+    this.flash = 0;
+    this.beams.length = 0;
+    this._runSaveTimer = 0;
+    this.camera.update(this.player, 1);
+    this.screens.clear();
+    this.state = GameState.PLAYING;
+    this._showPauseBtn(true);
+  }
+
   start() {
     this.audio.init();
+    // 开新的一局：丢弃旧的续玩快照
+    SaveData.clearRun();
     // 重置全部状态
     this.player.reset();
     MetaProgression.applyTo(this.player, this.save); // 注入永久加成
+    Skins.applyTo(this.player, this.save);           // 注入选中外观造型与专属特性
     this._enemyPool.clear();
     this._projPool.clear();
     this._ebPool.clear();
@@ -149,7 +242,7 @@ export class Game {
     this.particles.clear();
     this.spawnSystem.reset();
     this.stats = { time: 0, kills: 0, level: 1, bossKills: 0 };
-    this.boss = null;
+    this.bosses = [];
     this.timeScale = 1;
     this.flash = 0;
     this.beams.length = 0;
@@ -157,6 +250,7 @@ export class Game {
     this.screens.clear();
     this.state = GameState.PLAYING;
     this._showPauseBtn(true);
+    this._runSaveTimer = 0;
 
     // 战术预载：开局立即领取额外强化选择
     if (this.player.pendingLevels > 0) this.onLevelUp();
@@ -166,10 +260,59 @@ export class Game {
   _showMenu() {
     this.state = GameState.MENU;
     this._showPauseBtn(false);
+    const hasRun = !!SaveData.loadRun(); // 存在有效续玩快照时展示「继续上局」
     this.screens.showMenu(this.save, {
       onStart: () => this.start(),
+      onResume: hasRun ? () => this._resumeRun() : null,
       onShop: () => this._openShop(),
+      onHangar: () => this._openHangar(),
     });
+  }
+
+  /** 打开机库（外观选择 + 抽卡） */
+  _openHangar() {
+    this.audio.init();
+    this.state = GameState.HANGAR;
+    this._showPauseBtn(false);
+    this.screens.showHangar(this.save, {
+      onSelect: (id) => {
+        if (Skins.select(this.save, id)) {
+          SaveData.save(this.save);
+          this.audio.pickup();
+        }
+        this._openHangar(); // 刷新选中态
+      },
+      onDraw: (count) => {
+        const results = this._drawGacha(count);
+        if (results) {
+          SaveData.save(this.save);
+          this.audio.levelup();
+          this.screens.showGachaResult(this.save, results, () => this._openHangar());
+        }
+      },
+      onFreeDraw: () => {
+        const res = Skins.freeDraw(this.save);
+        if (res) {
+          SaveData.save(this.save);
+          this.audio.levelup();
+          this.screens.showGachaResult(this.save, [res], () => this._openHangar());
+        }
+      },
+      onBack: () => this._showMenu(),
+    });
+  }
+
+  /**
+   * 执行 count 连抽（1 或 10）。校验并扣除棱牌后逐次抽取。
+   * 棱牌不足时返回 null（不扣费）。
+   */
+  _drawGacha(count) {
+    const price = count >= 10 ? Skins.priceTen() : Skins.priceSingle();
+    if (this.save.skins.shards < price) return null;
+    this.save.skins.shards -= price;
+    const results = [];
+    for (let i = 0; i < count; i++) results.push(Skins.drawOne(this.save));
+    return results;
   }
 
   /** 打开强化实验室（永久升级商店） */
@@ -195,8 +338,16 @@ export class Game {
   /** 触发短暂慢动作 */
   slowmo(scale = 0.35) { this.timeScale = Math.min(this.timeScale, scale); }
 
-  _pause() { this.state = GameState.PAUSED; this._showPauseBtn(false); this.screens.showPause(this.player, () => this._resume()); }
+  _pause() { this.state = GameState.PAUSED; this._showPauseBtn(false); this._captureRun(); this.screens.showPause(this.player, () => this._resume(), () => this._quitRun()); }
   _resume() { this.screens.clear(); this.state = GameState.PLAYING; this._showPauseBtn(true); }
+
+  /** 主动结束本局：不做奖励结算，清除续玩快照后返回主菜单 */
+  _quitRun() {
+    this.state = GameState.MENU;
+    this._showPauseBtn(false);
+    SaveData.clearRun();
+    this._showMenu();
+  }
 
   // ---------------- 升级流程 ----------------
   onLevelUp() {
@@ -228,7 +379,7 @@ export class Game {
     const e = this._enemyPool.obtain();
     if (e) {
       e.spawn(type, x, y, hpScale);
-      if (e.isBoss) this.boss = e; // 记录当前 Boss 供血条显示
+      if (e.isBoss) this.bosses.push(e); // 记录当前 Boss 供血条显示（支持并存多个）
     }
     return e;
   }
@@ -300,7 +451,8 @@ export class Game {
 
   /** Boss 击杀演出：全屏闪白 + 慢动作 + 多波爆发 + 丰厚掉落 + 专属音效 */
   _killBoss(boss) {
-    if (this.boss === boss) this.boss = null;
+    const bi = this.bosses.indexOf(boss);
+    if (bi !== -1) this.bosses.splice(bi, 1);
     this.stats.bossKills++;
 
     // 演出
@@ -379,6 +531,10 @@ export class Game {
     this.stats.time += dt;
     this.stats.level = this.player.level;
 
+    // 周期性落盘对局快照（每 4 秒），保证意外关闭也能续玩
+    this._runSaveTimer += dt;
+    if (this._runSaveTimer >= 4) { this._runSaveTimer = 0; this._captureRun(); }
+
     // 0) 生成敌人（含难度爬升与 Boss）
     this.spawnSystem.update(dt);
     // 1) 敌人移动与 AI（Boss 攻击需要 game 上下文）
@@ -437,12 +593,14 @@ export class Game {
   _gameOver() {
     this.state = GameState.GAMEOVER;
     this._showPauseBtn(false);
+    SaveData.clearRun(); // 本局结束，清除续玩快照
     this.audio.gameover();
     this.camera.shake(30);
     this.particles.burst(this.player.x, this.player.y, "#00f0ff", 60, 500, 5, 1.2);
 
     // 结算货币并刷新历史记录，持久化存档
     const reward = MetaProgression.reward(this.save, this.stats);
+    const shardReward = Skins.reward(this.stats); // 本局产出的棱牌 ✦
     const best = this.save.best;
     const records = {
       time: this.stats.time > best.time,
@@ -456,15 +614,17 @@ export class Game {
     best.bossKills = Math.max(best.bossKills, this.stats.bossKills);
 
     this.save.cores += reward;
+    this.save.skins.shards += shardReward;
     this.save.totals.runs++;
     this.save.totals.kills += this.stats.kills;
     this.save.totals.bossKills += this.stats.bossKills;
     this.save.totals.cores += reward;
     SaveData.save(this.save);
 
-    setTimeout(() => this.screens.showGameOver(this.stats, { reward, records, save: this.save }, {
+    setTimeout(() => this.screens.showGameOver(this.stats, { reward, shardReward, records, save: this.save }, {
       onRestart: () => this.start(),
       onShop: () => this._openShop(),
+      onHangar: () => this._openHangar(),
       onMenu: () => this._showMenu(),
     }), 700);
   }
@@ -480,13 +640,15 @@ export class Game {
     for (const g of this.gems) if (this.camera.inView(g.x, g.y)) g.render(ctx);
     for (const e of this.enemies) if (this.camera.inView(e.x, e.y)) e.render(ctx);
 
-    // 子弹用叠加混合获得霓虹质感（批量一次性设置）
+    // 玩家子弹 / 光束：叠加混合获得霓虹能量质感（批量一次性设置）
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     for (const p of this.projectiles) p.render(ctx);
-    for (const b of this.enemyProjectiles) b.render(ctx);
     this._drawBeams(ctx);
     ctx.restore();
+
+    // 敌方弹幕：普通混合下绘制实心敌意光球，与玩家能量弹形成鲜明区分
+    for (const b of this.enemyProjectiles) b.render(ctx);
 
     if (this.state !== GameState.MENU) this.player.render(ctx);
     this.particles.render(ctx);

@@ -46,8 +46,8 @@ export class HUD {
     ctx.font = "600 12px 'JetBrains Mono', monospace";
     ctx.fillText(`LV ${player.level}`, 30, 62);
 
-    // ---- 顶部：Boss 血条 ----
-    if (game.boss && game.boss.active) this._bossBar(ctx, game.boss, W);
+    // ---- 顶部：Boss 血条（多个 Boss 并存时纵向排列，互不重叠，各带专属徽标）----
+    this._bossBars(ctx, game.bosses, W);
 
     // ---- 左下：已装备武器 ----
     this._weapons(ctx, player, H);
@@ -73,24 +73,44 @@ export class HUD {
     ctx.restore();
   }
 
-  /** 顶部醒目的 Boss 血条 */
-  _bossBar(ctx, boss, W) {
+  /** 顶部 Boss 血条组：多个 Boss 同时存在时纵向堆叠，各占一行，互不重叠 */
+  _bossBars(ctx, bosses, W) {
+    if (!bosses || !bosses.length) return;
+    const list = bosses.filter((b) => b && b.active);
+    if (!list.length) return;
+
     const w = Math.min(560, W * 0.6);
     const x = (W - w) / 2;
-    const y = 84;
-    const h = 14;
+    const rowH = 34;              // 每个 Boss 血条行的总高度（标签 + 血条 + 间距）
+    let y = 84;
+    for (const boss of list) {
+      this._bossBar(ctx, boss, x, y, w);
+      y += rowH;
+    }
+  }
+
+  /** 单个 Boss 血条：左侧专属徽标 + 名称/血量标签 + 血条 */
+  _bossBar(ctx, boss, x, y, w) {
+    const h = 12;
     const ratio = Math.max(0, boss.hp / boss.maxHp);
     const color = boss.color || "#ff2bd6";
     const name = (boss.def && boss.def.name) || "母核";
+    const kind = boss.kind || 0;
+
+    // 徽标绘制在血条左侧，与血条中心竖直对齐
+    this._bossEmblem(ctx, x - 14, y + h / 2, 8, kind, color);
 
     ctx.save();
-    ctx.textAlign = "center";
-    ctx.font = "700 13px 'JetBrains Mono', monospace";
+    // 名称 + 血量（血条上方，左对齐至血条起点）
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "700 12px 'JetBrains Mono', monospace";
     ctx.fillStyle = color;
     ctx.shadowBlur = 8; ctx.shadowColor = color;
-    ctx.fillText(`⚠ ${name}  ${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`, W / 2, y - 8);
+    ctx.fillText(`⚠ ${name}  ${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`, x, y - 4);
     ctx.shadowBlur = 0;
 
+    // 血条底槽 + 前景
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(x, y, w, h);
     ctx.fillStyle = color;
@@ -101,6 +121,54 @@ export class HUD {
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w, h);
     ctx.restore();
+  }
+
+  /** Boss 专属徽标：与场景内 Boss 造型呼应（母核=八边形 / 裂能体=六角星 / 湮灭者=六边形） */
+  _bossEmblem(ctx, cx, cy, r, kind, color) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 6; ctx.shadowColor = color;
+    if (kind === 1) {
+      this._emblemStar(ctx, 6, r, r * 0.5);
+    } else if (kind === 2) {
+      this._emblemPoly(ctx, 6, r);
+      this._emblemPoly(ctx, 6, r * 0.6);
+    } else {
+      this._emblemPoly(ctx, 8, r);
+    }
+    // 亮核
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.24, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  _emblemPoly(ctx, sides, r) {
+    ctx.beginPath();
+    for (let i = 0; i <= sides; i++) {
+      const a = (i / sides) * TAU - Math.PI / 2;
+      const px = Math.cos(a) * r, py = Math.sin(a) * r;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.globalAlpha = 0.28; ctx.fill();
+    ctx.globalAlpha = 1; ctx.stroke();
+  }
+
+  _emblemStar(ctx, points, rOuter, rInner) {
+    ctx.beginPath();
+    for (let i = 0; i <= points * 2; i++) {
+      const rr = i % 2 === 0 ? rOuter : rInner;
+      const a = (i / (points * 2)) * TAU - Math.PI / 2;
+      const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.globalAlpha = 0.28; ctx.fill();
+    ctx.globalAlpha = 1; ctx.stroke();
   }
 
   _bar(ctx, x, y, w, h, ratio, color, bg) {

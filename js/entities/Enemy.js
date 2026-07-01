@@ -113,7 +113,7 @@ export class Enemy {
   _fireBossAttack(player, game) {
     const dmg = BOSS_TUNE[this.kind].bullet;
     const color = this.color;                 // 用本体颜色，强化 Boss 辨识度
-    const opt = (extra) => ({ damage: dmg, pierce: 0, radius: 7, color, life: 6, ...extra });
+    const opt = (extra) => ({ damage: dmg, pierce: 0, radius: 7, color, life: 6, hostile: true, ...extra });
     const aimAngle = () => Math.atan2(player.y - this.y, player.x - this.x);
 
     if (this.kind === 0) this._attackNucleus(player, game, opt, aimAngle);

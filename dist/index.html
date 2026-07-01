@@ -271,16 +271,25 @@ html, body {
   font-family: var(--mono);
   font-size: 26px;
   font-weight: 800;
-  color: var(--neon-magenta);
-  text-shadow: 0 0 12px var(--neon-magenta);
   letter-spacing: 0.04em;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
 }
-.cores-balance span {
+/* 单个货币单元：数值 + 标签基线对齐 */
+.cores-balance .cur { display: inline-flex; align-items: baseline; gap: 6px; }
+/* 暗物质核心：品红高亮 */
+.cores-balance .cur-core { color: var(--neon-magenta); text-shadow: 0 0 12px var(--neon-magenta); }
+/* 两种货币之间的分隔符 */
+.cores-balance .cur-sep { color: #52627e; font-weight: 400; font-size: 18px; }
+/* 货币文字标签：小号、低饱和，不与数值抢视觉 */
+.cores-balance .lbl {
   font-size: 13px;
   font-weight: 400;
   color: #8fa9c8;
   letter-spacing: 0.18em;
-  margin-left: 6px;
   text-shadow: none;
 }
 
@@ -299,8 +308,13 @@ html, body {
 .menu-btns { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
 .btn.btn-2 { color: var(--neon-magenta); border-color: rgba(255, 43, 214, 0.4); background: rgba(255, 43, 214, 0.06); }
 .btn.btn-2:hover { color: #fff; background: rgba(255, 43, 214, 0.16); box-shadow: 0 0 22px rgba(255, 43, 214, 0.55); }
-.btn.btn-3 { color: #8fa9c8; border-color: rgba(143, 169, 200, 0.35); background: rgba(143, 169, 200, 0.05); font-size: 15px; padding: 12px 28px; }
-.btn.btn-3:hover { color: #fff; background: rgba(143, 169, 200, 0.14); box-shadow: 0 0 18px rgba(143, 169, 200, 0.4); }
+.btn.btn-3 { color: var(--neon-violet); border-color: rgba(138, 91, 255, 0.4); background: rgba(138, 91, 255, 0.06); }
+.btn.btn-3:hover { color: #fff; background: rgba(138, 91, 255, 0.16); box-shadow: 0 0 22px rgba(138, 91, 255, 0.55); }
+.btn.btn-4 { color: var(--neon-lime); border-color: rgba(170, 255, 0, 0.4); background: rgba(170, 255, 0, 0.06); }
+.btn.btn-4:hover { color: #fff; background: rgba(170, 255, 0, 0.16); box-shadow: 0 0 22px rgba(170, 255, 0, 0.55); }
+/* 危险操作按钮（结束本局等）：暗红弱化，避免误当作主操作 */
+.btn.btn-quit { color: #ff6b7d; border-color: rgba(255, 107, 125, 0.4); background: rgba(255, 107, 125, 0.05); }
+.btn.btn-quit:hover { color: #fff; background: rgba(255, 107, 125, 0.16); box-shadow: 0 0 22px rgba(255, 107, 125, 0.5); }
 
 /* ---------- 结算：破纪录标签 / 收益 ---------- */
 .rec {
@@ -377,6 +391,122 @@ html, body {
 .shop-buy.poor { color: #6f86a8; border-color: rgba(143, 169, 200, 0.25); background: transparent; cursor: not-allowed; }
 .shop-buy.maxed { color: var(--neon-lime); border-color: rgba(170, 255, 0, 0.4); background: rgba(170, 255, 0, 0.06); cursor: default; }
 
+/* ---------- 棱牌货币色（机库/抽卡专用） ---------- */
+.shard-amt { color: var(--neon-lime); text-shadow: 0 0 12px var(--neon-lime); }
+
+/* ---------- 机库：抽卡按钮栏 ---------- */
+.gacha-bar { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+.gacha-btn { font-size: 16px; padding: 12px 30px; }
+.btn.poor, .btn:disabled { color: #6f86a8; border-color: rgba(143, 169, 200, 0.25); background: transparent; cursor: not-allowed; box-shadow: none; transform: none; }
+.btn.poor:hover, .btn:disabled:hover { color: #6f86a8; background: transparent; box-shadow: none; transform: none; }
+
+/* 每日免费抽卡按钮：柠檬绿高亮，与棱牌货币色呼应 */
+.btn.free-draw {
+  color: var(--neon-lime);
+  border-color: rgba(170, 255, 0, 0.5);
+  background: rgba(170, 255, 0, 0.08);
+  font-size: 16px;
+  padding: 12px 30px;
+}
+.btn.free-draw:hover { color: #fff; background: rgba(170, 255, 0, 0.2); box-shadow: 0 0 22px rgba(170, 255, 0, 0.55); }
+.btn.free-draw.claimed { color: #6f86a8; border-color: rgba(143, 169, 200, 0.25); background: transparent; box-shadow: none; }
+.btn.free-draw.claimed:hover { color: #6f86a8; background: transparent; box-shadow: none; transform: none; }
+
+/* ---------- 机库：外观网格 ---------- */
+.skin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+  width: min(880px, 92vw);
+  max-height: 54vh;
+  overflow-y: auto;
+  padding: 6px;
+}
+.skin-card {
+  pointer-events: auto;
+  position: relative;
+  background: var(--panel);
+  border: 1px solid rgba(143, 169, 200, 0.25);
+  border-radius: 10px;
+  padding: 14px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s;
+}
+.skin-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--accent, var(--neon-cyan));
+  box-shadow: 0 0 14px var(--accent, var(--neon-cyan));
+}
+.skin-card:hover { transform: translateY(-4px); border-color: var(--accent, var(--neon-cyan)); box-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 0 18px var(--accent, var(--neon-cyan)); }
+.skin-card.locked { opacity: 0.72; }
+.skin-card.selected { border-color: var(--accent, var(--neon-cyan)); box-shadow: 0 0 22px var(--accent, var(--neon-cyan)); }
+.skin-canvas { width: 96px; height: 96px; }
+.skin-rar { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
+.skin-name { font-size: 16px; font-weight: 700; color: #fff; }
+.skin-stars { font-size: 14px; letter-spacing: 0.08em; }
+.skin-perk { font-family: var(--mono); font-size: 11px; line-height: 1.4; color: #9fb4d2; min-height: 30px; }
+.skin-action { margin-top: 4px; min-height: 30px; display: flex; align-items: center; }
+.skin-select {
+  pointer-events: auto;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--neon-cyan);
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 6px 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.skin-select:hover { color: #fff; background: rgba(0, 240, 255, 0.2); box-shadow: 0 0 14px rgba(0, 240, 255, 0.5); }
+.skin-equipped { font-family: var(--mono); font-size: 13px; color: var(--neon-lime); letter-spacing: 0.1em; }
+.skin-lockicon { font-size: 16px; opacity: 0.6; }
+
+/* 稀有度描边强调 */
+.rar-rare { --accent: #00f0ff; }
+.rar-epic { --accent: #b06bff; }
+.rar-legendary { --accent: #ffd23f; }
+.rar-common { --accent: #8fa9c8; }
+
+/* ---------- 抽卡结果 ---------- */
+.gacha-result {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 14px;
+  width: min(680px, 92vw);
+  max-height: 56vh;
+  overflow-y: auto;
+  padding: 6px;
+}
+.gr-cell {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--accent, var(--neon-cyan));
+  border-radius: 10px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent, #00f0ff) 40%, transparent);
+  animation: grPop 0.4s ease backwards;
+}
+@keyframes grPop { from { opacity: 0; transform: scale(0.7) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+.gr-canvas { width: 84px; height: 84px; }
+.gr-rar { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+.gr-name { font-size: 14px; font-weight: 700; color: #fff; }
+.gr-tag { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 10px; letter-spacing: 0.06em; }
+.gr-tag.new { color: var(--bg); background: var(--neon-lime); font-weight: 700; }
+.gr-tag.up { color: var(--neon-cyan); border: 1px solid rgba(0,240,255,0.5); }
+.gr-tag.refund { color: #8fa9c8; border: 1px solid rgba(143,169,200,0.4); }
+
 /* ============================================================
    移动端 / 小屏 响应式适配
    - 覆盖界面允许滚动，避免内容超出被裁切
@@ -389,6 +519,11 @@ html, body {
     gap: 14px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+  }
+  /* 首页内容较短，移动端保持垂直居中；若内容超高则自动从顶部滚动 */
+  .screen.menu-screen {
+    justify-content: center;
+    padding: 24px 12px;
   }
   .screen h1 { font-size: clamp(34px, 12vw, 58px); }
   .screen h2 { font-size: clamp(20px, 6vw, 30px); }
@@ -405,6 +540,13 @@ html, body {
   .shop-list { width: 92vw; max-height: 58vh; }
   .shop-name { font-size: 15px; }
   .shop-effect { font-size: 12px; }
+
+  /* 机库：外观网格 + 抽卡结果 */
+  .skin-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); width: 92vw; max-height: 50vh; gap: 12px; }
+  .skin-canvas { width: 84px; height: 84px; }
+  .gacha-bar { width: 100%; flex-direction: column; align-items: center; }
+  .gacha-btn { width: min(92vw, 360px); }
+  .gacha-result { width: 92vw; }
 
   /* 菜单/结算按钮：大号竖排，触摸友好 */
   .menu-btns { width: 100%; flex-direction: column; align-items: center; gap: 12px; }
@@ -543,6 +685,12 @@ const CONFIG = Object.freeze({
     xpGrowth: 1.34,      // 每级经验增长系数
   },
 
+  // 拾取道具参数
+  items: {
+    bombRadius: 380,     // 湮灭：仅波及玩家周围此半径内的敌人（非全屏）
+    bombDamageBoss: 300, // 湮灭对范围内 Boss 的伤害
+  },
+
   fx: {
     shakeDecay: 5.5,
     maxParticles: 600,
@@ -553,6 +701,7 @@ const CONFIG = Object.freeze({
 const GameState = Object.freeze({
   MENU: "MENU",
   SHOP: "SHOP",
+  HANGAR: "HANGAR",
   PLAYING: "PLAYING",
   LEVELUP: "LEVELUP",
   PAUSED: "PAUSED",
@@ -757,6 +906,7 @@ const {SpawnSystem} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Sp
 const {CollisionSystem} = require("/Users/fiona/Desktop/neon-survivors/js/systems/CollisionSystem.js");
 const {UpgradeSystem} = require("/Users/fiona/Desktop/neon-survivors/js/systems/UpgradeSystem.js");
 const {MetaProgression} = require("/Users/fiona/Desktop/neon-survivors/js/systems/MetaProgression.js");
+const {Skins} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
 
 const {HUD} = require("/Users/fiona/Desktop/neon-survivors/js/ui/HUD.js");
 const {Screens} = require("/Users/fiona/Desktop/neon-survivors/js/ui/Screens.js");
@@ -794,10 +944,11 @@ class Game {
     this.state = GameState.MENU;
     this.stats = { time: 0, kills: 0, level: 1, bossKills: 0 };
     this._lastTime = 0;
-    this.boss = null;        // 当前存活的 Boss 引用（用于顶部血条）
+    this.bosses = [];        // 当前存活的 Boss 列表（可能同时存在多个，用于顶部血条）
     this.timeScale = 1;      // 时间缩放（慢动作演出）
     this.flash = 0;          // 全屏白闪强度 0..1
     this.beams = [];         // 瞬时电弧光束（电弧链武器）
+    this._runSaveTimer = 0;  // 对局快照自动保存节流计时
 
     // 元进度存档（跨局永久成长）
     this.save = SaveData.load();
@@ -807,6 +958,7 @@ class Game {
     if (this.isTouch) this._createPauseButton();
 
     this._bindGlobalKeys();
+    this._bindAutoSave();
     this._setupCanvas();
     window.addEventListener("resize", () => this._setupCanvas());
 
@@ -864,11 +1016,101 @@ class Game {
     });
   }
 
+  /** 页面隐藏/关闭时立即落盘对局快照，避免刷新或切走后丢失当前进度 */
+  _bindAutoSave() {
+    const flush = () => {
+      if (this.state === GameState.PLAYING || this.state === GameState.PAUSED || this.state === GameState.LEVELUP) {
+        this._captureRun();
+      }
+    };
+    document.addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
+    window.addEventListener("pagehide", flush);
+  }
+
+  // ---------------- 对局快照（localStorage 续玩） ----------------
+
+  /** 将当前对局的玩家状态、统计与生成系统进度打包为纯 JSON 快照 */
+  _snapshotRun() {
+    const p = this.player;
+    const s = this.spawnSystem;
+    return {
+      player: {
+        hp: p.hp, maxHp: p.maxHp, speed: p.speed, pickupRange: p.pickupRange, regen: p.regen,
+        damageMul: p.damageMul, critChance: p.critChance, critMult: p.critMult,
+        cooldownMul: p.cooldownMul, damageReduction: p.damageReduction, xpMul: p.xpMul,
+        lifesteal: p.lifesteal, revives: p.revives, pendingLevels: p.pendingLevels,
+        level: p.level, xp: p.xp, xpToNext: p.xpToNext, x: p.x, y: p.y,
+        weapons: p.weapons, acquired: p.acquired, skin: p.skin,
+      },
+      stats: { ...this.stats },
+      spawn: {
+        timer: s.timer, interval: s.interval, batch: s.batch, hpScale: s.hpScale,
+        elapsed: s.elapsed, nextBoss: s.nextBoss, rampTimer: s.rampTimer, bossCount: s.bossCount,
+      },
+    };
+  }
+
+  /** 落盘当前对局快照 */
+  _captureRun() {
+    if (!this.player.alive) return;
+    SaveData.saveRun(this._snapshotRun());
+  }
+
+  /** 从快照恢复对局并进入游戏（场上敌人重置，难度按存活时长延续） */
+  _resumeRun() {
+    const rs = SaveData.loadRun();
+    if (!rs) { this.start(); return; }
+    this.audio.init();
+    this.player.reset();
+
+    // 套用快照中的玩家数值（逐字段校验，避免损坏数据污染状态）
+    const p = this.player, sp = rs.player;
+    const numKeys = ["hp", "maxHp", "speed", "pickupRange", "regen", "damageMul", "critChance",
+      "critMult", "cooldownMul", "damageReduction", "xpMul", "lifesteal", "revives",
+      "pendingLevels", "level", "xp", "xpToNext", "x", "y"];
+    for (const k of numKeys) {
+      const v = Number(sp[k]);
+      if (Number.isFinite(v)) p[k] = v;
+    }
+    if (sp.weapons && typeof sp.weapons === "object") p.weapons = JSON.parse(JSON.stringify(sp.weapons));
+    if (sp.acquired && typeof sp.acquired === "object") p.acquired = JSON.parse(JSON.stringify(sp.acquired));
+    if (sp.skin && typeof sp.skin === "object") p.skin = { ...p.skin, ...sp.skin };
+    p.invuln = 0;
+
+    // 清空场上实体（重开一片战场），难度进度由 spawnSystem 延续
+    this._enemyPool.clear();
+    this._projPool.clear();
+    this._ebPool.clear();
+    this._gemPool.clear();
+    this.particles.clear();
+    this.spawnSystem.reset();
+    Object.assign(this.spawnSystem, rs.spawn);
+
+    this.stats = {
+      time: Number(rs.stats.time) || 0,
+      kills: Math.max(0, Math.floor(Number(rs.stats.kills) || 0)),
+      level: Math.max(1, Math.floor(Number(rs.stats.level) || 1)),
+      bossKills: Math.max(0, Math.floor(Number(rs.stats.bossKills) || 0)),
+    };
+    this.bosses = [];
+    this.timeScale = 1;
+    this.flash = 0;
+    this.beams.length = 0;
+    this._runSaveTimer = 0;
+    this.camera.update(this.player, 1);
+    this.screens.clear();
+    this.state = GameState.PLAYING;
+    this._showPauseBtn(true);
+  }
+
   start() {
     this.audio.init();
+    // 开新的一局：丢弃旧的续玩快照
+    SaveData.clearRun();
     // 重置全部状态
     this.player.reset();
     MetaProgression.applyTo(this.player, this.save); // 注入永久加成
+    Skins.applyTo(this.player, this.save);           // 注入选中外观造型与专属特性
     this._enemyPool.clear();
     this._projPool.clear();
     this._ebPool.clear();
@@ -876,7 +1118,7 @@ class Game {
     this.particles.clear();
     this.spawnSystem.reset();
     this.stats = { time: 0, kills: 0, level: 1, bossKills: 0 };
-    this.boss = null;
+    this.bosses = [];
     this.timeScale = 1;
     this.flash = 0;
     this.beams.length = 0;
@@ -884,6 +1126,7 @@ class Game {
     this.screens.clear();
     this.state = GameState.PLAYING;
     this._showPauseBtn(true);
+    this._runSaveTimer = 0;
 
     // 战术预载：开局立即领取额外强化选择
     if (this.player.pendingLevels > 0) this.onLevelUp();
@@ -893,10 +1136,59 @@ class Game {
   _showMenu() {
     this.state = GameState.MENU;
     this._showPauseBtn(false);
+    const hasRun = !!SaveData.loadRun(); // 存在有效续玩快照时展示「继续上局」
     this.screens.showMenu(this.save, {
       onStart: () => this.start(),
+      onResume: hasRun ? () => this._resumeRun() : null,
       onShop: () => this._openShop(),
+      onHangar: () => this._openHangar(),
     });
+  }
+
+  /** 打开机库（外观选择 + 抽卡） */
+  _openHangar() {
+    this.audio.init();
+    this.state = GameState.HANGAR;
+    this._showPauseBtn(false);
+    this.screens.showHangar(this.save, {
+      onSelect: (id) => {
+        if (Skins.select(this.save, id)) {
+          SaveData.save(this.save);
+          this.audio.pickup();
+        }
+        this._openHangar(); // 刷新选中态
+      },
+      onDraw: (count) => {
+        const results = this._drawGacha(count);
+        if (results) {
+          SaveData.save(this.save);
+          this.audio.levelup();
+          this.screens.showGachaResult(this.save, results, () => this._openHangar());
+        }
+      },
+      onFreeDraw: () => {
+        const res = Skins.freeDraw(this.save);
+        if (res) {
+          SaveData.save(this.save);
+          this.audio.levelup();
+          this.screens.showGachaResult(this.save, [res], () => this._openHangar());
+        }
+      },
+      onBack: () => this._showMenu(),
+    });
+  }
+
+  /**
+   * 执行 count 连抽（1 或 10）。校验并扣除棱牌后逐次抽取。
+   * 棱牌不足时返回 null（不扣费）。
+   */
+  _drawGacha(count) {
+    const price = count >= 10 ? Skins.priceTen() : Skins.priceSingle();
+    if (this.save.skins.shards < price) return null;
+    this.save.skins.shards -= price;
+    const results = [];
+    for (let i = 0; i < count; i++) results.push(Skins.drawOne(this.save));
+    return results;
   }
 
   /** 打开强化实验室（永久升级商店） */
@@ -922,8 +1214,16 @@ class Game {
   /** 触发短暂慢动作 */
   slowmo(scale = 0.35) { this.timeScale = Math.min(this.timeScale, scale); }
 
-  _pause() { this.state = GameState.PAUSED; this._showPauseBtn(false); this.screens.showPause(this.player, () => this._resume()); }
+  _pause() { this.state = GameState.PAUSED; this._showPauseBtn(false); this._captureRun(); this.screens.showPause(this.player, () => this._resume(), () => this._quitRun()); }
   _resume() { this.screens.clear(); this.state = GameState.PLAYING; this._showPauseBtn(true); }
+
+  /** 主动结束本局：不做奖励结算，清除续玩快照后返回主菜单 */
+  _quitRun() {
+    this.state = GameState.MENU;
+    this._showPauseBtn(false);
+    SaveData.clearRun();
+    this._showMenu();
+  }
 
   // ---------------- 升级流程 ----------------
   onLevelUp() {
@@ -955,7 +1255,7 @@ class Game {
     const e = this._enemyPool.obtain();
     if (e) {
       e.spawn(type, x, y, hpScale);
-      if (e.isBoss) this.boss = e; // 记录当前 Boss 供血条显示
+      if (e.isBoss) this.bosses.push(e); // 记录当前 Boss 供血条显示（支持并存多个）
     }
     return e;
   }
@@ -1027,7 +1327,8 @@ class Game {
 
   /** Boss 击杀演出：全屏闪白 + 慢动作 + 多波爆发 + 丰厚掉落 + 专属音效 */
   _killBoss(boss) {
-    if (this.boss === boss) this.boss = null;
+    const bi = this.bosses.indexOf(boss);
+    if (bi !== -1) this.bosses.splice(bi, 1);
     this.stats.bossKills++;
 
     // 演出
@@ -1106,6 +1407,10 @@ class Game {
     this.stats.time += dt;
     this.stats.level = this.player.level;
 
+    // 周期性落盘对局快照（每 4 秒），保证意外关闭也能续玩
+    this._runSaveTimer += dt;
+    if (this._runSaveTimer >= 4) { this._runSaveTimer = 0; this._captureRun(); }
+
     // 0) 生成敌人（含难度爬升与 Boss）
     this.spawnSystem.update(dt);
     // 1) 敌人移动与 AI（Boss 攻击需要 game 上下文）
@@ -1164,12 +1469,14 @@ class Game {
   _gameOver() {
     this.state = GameState.GAMEOVER;
     this._showPauseBtn(false);
+    SaveData.clearRun(); // 本局结束，清除续玩快照
     this.audio.gameover();
     this.camera.shake(30);
     this.particles.burst(this.player.x, this.player.y, "#00f0ff", 60, 500, 5, 1.2);
 
     // 结算货币并刷新历史记录，持久化存档
     const reward = MetaProgression.reward(this.save, this.stats);
+    const shardReward = Skins.reward(this.stats); // 本局产出的棱牌 ✦
     const best = this.save.best;
     const records = {
       time: this.stats.time > best.time,
@@ -1183,15 +1490,17 @@ class Game {
     best.bossKills = Math.max(best.bossKills, this.stats.bossKills);
 
     this.save.cores += reward;
+    this.save.skins.shards += shardReward;
     this.save.totals.runs++;
     this.save.totals.kills += this.stats.kills;
     this.save.totals.bossKills += this.stats.bossKills;
     this.save.totals.cores += reward;
     SaveData.save(this.save);
 
-    setTimeout(() => this.screens.showGameOver(this.stats, { reward, records, save: this.save }, {
+    setTimeout(() => this.screens.showGameOver(this.stats, { reward, shardReward, records, save: this.save }, {
       onRestart: () => this.start(),
       onShop: () => this._openShop(),
+      onHangar: () => this._openHangar(),
       onMenu: () => this._showMenu(),
     }), 700);
   }
@@ -1207,13 +1516,15 @@ class Game {
     for (const g of this.gems) if (this.camera.inView(g.x, g.y)) g.render(ctx);
     for (const e of this.enemies) if (this.camera.inView(e.x, e.y)) e.render(ctx);
 
-    // 子弹用叠加混合获得霓虹质感（批量一次性设置）
+    // 玩家子弹 / 光束：叠加混合获得霓虹能量质感（批量一次性设置）
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     for (const p of this.projectiles) p.render(ctx);
-    for (const b of this.enemyProjectiles) b.render(ctx);
     this._drawBeams(ctx);
     ctx.restore();
+
+    // 敌方弹幕：普通混合下绘制实心敌意光球，与玩家能量弹形成鲜明区分
+    for (const b of this.enemyProjectiles) b.render(ctx);
 
     if (this.state !== GameState.MENU) this.player.render(ctx);
     this.particles.render(ctx);
@@ -1548,6 +1859,24 @@ class ParticleSystem {
     if (p) p.spawn(x, y, rand(-20, 20), rand(-20, 20), life, color, size);
   }
 
+  /** 定向单粒子：给定初速度方向（用于引擎尾焰等有方向的拖尾） */
+  spark(x, y, vx, vy, life, color, size = 2.5) {
+    const p = this._obtain();
+    if (p) p.spawn(x, y, vx, vy, life, color, size);
+  }
+
+  /** 环形冲击波：沿指定半径的圆周撒一圈向外扩散的粒子，用于可视化范围效果（如湮灭波及范围） */
+  ring(x, y, color, radius, count = 48, size = 3, life = 0.5) {
+    for (let i = 0; i < count; i++) {
+      const p = this._obtain();
+      if (!p) break;
+      const a = (i / count) * TAU;
+      const s = rand(70, 140);
+      p.spawn(x + Math.cos(a) * radius, y + Math.sin(a) * radius,
+        Math.cos(a) * s, Math.sin(a) * s, rand(life * 0.6, life), color, size);
+    }
+  }
+
   damageText(x, y, amount, crit = false) {
     const t = this._obtainText();
     if (t) t.spawn(x + rand(-8, 8), y, Math.round(amount), crit ? "#ffd23f" : "#ffffff", crit ? 22 : 15);
@@ -1665,13 +1994,21 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/core/SaveData.js"] = function (ex
  * 避免被篡改/损坏的存档导致运行异常（不使用 eval / 反序列化任意对象）。
  */
 const KEY = "neondrift.save.v1";
+const RUN_KEY = "neondrift.run.v1"; // 当前进行中的一局快照（用于「继续上局」）
 
 function defaults() {
   return {
-    cores: 0,                       // 货币：暗物质核心
+    cores: 0,                       // 货币：暗物质核心（强化实验室）
     upgrades: {},                   // 永久升级 id -> 等级
     best: { time: 0, kills: 0, level: 1, bossKills: 0 },
     totals: { runs: 0, kills: 0, bossKills: 0, cores: 0 },
+    // 机库：外观抽卡与选择
+    skins: {
+      shards: 0,                    // 货币：棱牌 ✦（抽卡专用）
+      owned: { drift: 1 },          // 外观 id -> 星级（默认拥有「漂移者」1 星）
+      selected: "drift",            // 当前选中外观
+      lastFreeDraw: "",             // 上次领取每日免费抽卡的本地日期（YYYY-MM-DD）
+    },
   };
 }
 
@@ -1708,6 +2045,27 @@ const SaveData = {
         d.totals.bossKills = num(parsed.totals.bossKills);
         d.totals.cores = num(parsed.totals.cores);
       }
+      if (parsed.skins && typeof parsed.skins === "object") {
+        d.skins.shards = num(parsed.skins.shards);
+        if (parsed.skins.owned && typeof parsed.skins.owned === "object") {
+          const owned = {};
+          for (const k of Object.keys(parsed.skins.owned)) {
+            // 星级限制在 1..5，非法值忽略
+            const star = Math.floor(num(parsed.skins.owned[k]));
+            if (star >= 1) owned[k] = Math.min(5, star);
+          }
+          // 至少保留默认外观，避免存档损坏后无可用外观
+          if (!owned.drift) owned.drift = 1;
+          d.skins.owned = owned;
+        }
+        if (typeof parsed.skins.selected === "string" && d.skins.owned[parsed.skins.selected]) {
+          d.skins.selected = parsed.skins.selected;
+        }
+        // 仅接受 YYYY-MM-DD 形式的日期字符串，其余忽略
+        if (typeof parsed.skins.lastFreeDraw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.skins.lastFreeDraw)) {
+          d.skins.lastFreeDraw = parsed.skins.lastFreeDraw;
+        }
+      }
     } catch (_e) {
       return defaults();
     }
@@ -1725,6 +2083,42 @@ const SaveData = {
   reset() {
     try { localStorage.removeItem(KEY); } catch (_e) { /* ignore */ }
     return defaults();
+  },
+
+  // ---------------- 进行中的一局快照 ----------------
+
+  /** 保存当前对局快照，便于下次打开时「继续上局」（数据由 Game 组织，均为纯 JSON） */
+  saveRun(run) {
+    try {
+      localStorage.setItem(RUN_KEY, JSON.stringify(run));
+    } catch (_e) {
+      // localStorage 不可用时静默降级
+    }
+  },
+
+  /**
+   * 读取对局快照。安全解析：仅接受结构完整、玩家仍存活的快照，
+   * 否则返回 null（不使用 eval / 不信任任意结构）。
+   */
+  loadRun() {
+    try {
+      const raw = localStorage.getItem(RUN_KEY);
+      if (!raw) return null;
+      const r = JSON.parse(raw);
+      if (!r || typeof r !== "object") return null;
+      if (!r.player || typeof r.player !== "object") return null;
+      if (!r.stats || typeof r.stats !== "object") return null;
+      if (!r.spawn || typeof r.spawn !== "object") return null;
+      // 玩家已阵亡的快照无意义
+      if (!(Number(r.player.hp) > 0)) return null;
+      return r;
+    } catch (_e) {
+      return null;
+    }
+  },
+
+  clearRun() {
+    try { localStorage.removeItem(RUN_KEY); } catch (_e) { /* ignore */ }
   },
 };
 
@@ -1899,7 +2293,7 @@ class Enemy {
   _fireBossAttack(player, game) {
     const dmg = BOSS_TUNE[this.kind].bullet;
     const color = this.color;                 // 用本体颜色，强化 Boss 辨识度
-    const opt = (extra) => ({ damage: dmg, pierce: 0, radius: 7, color, life: 6, ...extra });
+    const opt = (extra) => ({ damage: dmg, pierce: 0, radius: 7, color, life: 6, hostile: true, ...extra });
     const aimAngle = () => Math.atan2(player.y - this.y, player.x - this.x);
 
     if (this.kind === 0) this._attackNucleus(player, game, opt, aimAngle);
@@ -2137,7 +2531,9 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/entities/Player.js"] = function (
  */
 const {CONFIG} = require("/Users/fiona/Desktop/neon-survivors/js/config.js");
 const {Vector2} = require("/Users/fiona/Desktop/neon-survivors/js/utils/Vector2.js");
-const {TAU, clamp} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.js");
+const {TAU, clamp, rand} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.js");
+const {Skins} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
+const {drawGlow} = require("/Users/fiona/Desktop/neon-survivors/js/core/GlowCache.js");
 
 class Player {
   constructor() {
@@ -2182,6 +2578,10 @@ class Player {
 
     this.moveDir = new Vector2();
     this.facing = new Vector2(0, -1);
+    this.animT = 0;           // 渲染动画计时（引擎尾焰/能量光环脉动）
+
+    // 当前外观（默认漂移者三角机，开局由 Skins.applyTo 覆盖为选中外观）
+    this.skin = { id: "drift", shape: "arrow", accent: "#00f0ff", star: 1 };
   }
 
   get alive() { return this.hp > 0; }
@@ -2211,6 +2611,7 @@ class Player {
   update(dt, input, game) {
     if (this.invuln > 0) this.invuln -= dt;
     if (this.regen > 0) this.heal(this.regen * dt);
+    this.animT += dt;
 
     // 移动
     this.moveDir = input.getMoveVector();
@@ -2218,7 +2619,16 @@ class Player {
       this.x += this.moveDir.x * this.speed * dt;
       this.y += this.moveDir.y * this.speed * dt;
       this.facing.copy(this.moveDir);
-      game.particles.trail(this.x, this.y, "#00f0ff", 2, 0.25);
+      // 引擎尾焰：从机尾向后定向喷射（方向性拖尾，强化“这是玩家”的辨识）
+      const c = this.skin.accent || "#00f0ff";
+      const rx = this.x - this.facing.x * this.radius;
+      const ry = this.y - this.facing.y * this.radius;
+      for (let i = 0; i < 2; i++) {
+        game.particles.spark(rx, ry,
+          -this.facing.x * 70 + rand(-30, 30),
+          -this.facing.y * 70 + rand(-30, 30),
+          rand(0.22, 0.4), c, rand(2, 3.4));
+      }
     }
     // 边界约束
     this.x = clamp(this.x, this.radius, CONFIG.world.width - this.radius);
@@ -2339,6 +2749,33 @@ class Player {
   }
 
   // ---------------- 渲染 ----------------
+  /** 引擎尾焰：在机体本地坐标系（朝上 -y）机尾 +y 方向喷射的双层火焰 */
+  _drawEngineFlame(ctx, color) {
+    const r = this.radius;
+    const moving = this.moveDir.lengthSq > 0.001;
+    const flick = 0.7 + 0.3 * Math.sin(this.animT * 34);
+    const len = (moving ? 1.7 : 0.8) * flick;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    // 外焰
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.42, r * 0.6);
+    ctx.quadraticCurveTo(0, r * (0.9 + len), r * 0.42, r * 0.6);
+    ctx.closePath();
+    ctx.fill();
+    // 内焰（白热）
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.2, r * 0.58);
+    ctx.quadraticCurveTo(0, r * (0.72 + len * 0.7), r * 0.2, r * 0.58);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   render(ctx) {
     const a = this.weapons.aura;
     // 灼蚀场视觉
@@ -2353,22 +2790,25 @@ class Player {
       ctx.restore();
     }
 
-    // 飞船本体（朝向移动方向的三角飞行器）
+    // 飞船本体（按当前外观造型绘制，朝向移动方向）
+    const baseColor = this.skin.accent || "#00f0ff";
+
+    // 玩家专属：脉动能量光环（敌人从不具备此特征，是最稳健的区分信号）
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const pulse = 0.5 + 0.5 * Math.sin(this.animT * 4);
+    ctx.globalAlpha = 0.10 + 0.05 * pulse;
+    drawGlow(ctx, baseColor, this.x, this.y, this.radius * (2.6 + 0.3 * pulse));
+    ctx.restore();
+
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(Math.atan2(this.facing.y, this.facing.x) + Math.PI / 2);
-    ctx.shadowBlur = 18;
-    ctx.shadowColor = this.invuln > 0 && Math.floor(this.invuln * 20) % 2 ? "#fff" : "#00f0ff";
-    ctx.fillStyle = ctx.shadowColor;
-    ctx.beginPath();
-    ctx.moveTo(0, -this.radius);
-    ctx.lineTo(this.radius * 0.8, this.radius);
-    ctx.lineTo(0, this.radius * 0.5);
-    ctx.lineTo(-this.radius * 0.8, this.radius);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#05060e";
-    ctx.beginPath(); ctx.arc(0, 0, this.radius * 0.28, 0, TAU); ctx.fill();
+    const flash = this.invuln > 0 && Math.floor(this.invuln * 20) % 2;
+    const color = flash ? "#ffffff" : baseColor;
+    // 引擎尾焰（机尾 +y 方向，移动时更长更亮）
+    this._drawEngineFlame(ctx, color);
+    Skins.drawShip(ctx, this.skin.shape, this.radius, color);
     ctx.restore();
 
     // 轨道核
@@ -2403,13 +2843,14 @@ const {drawGlow} = require("/Users/fiona/Desktop/neon-survivors/js/core/GlowCach
 class Projectile {
   constructor() { this.active = false; }
 
-  spawn(x, y, vx, vy, { damage, pierce = 0, radius = 5, color = "#00f0ff", life = 2.4 }) {
+  spawn(x, y, vx, vy, { damage, pierce = 0, radius = 5, color = "#00f0ff", life = 2.4, hostile = false }) {
     this.x = x; this.y = y; this.vx = vx; this.vy = vy;
     this.damage = damage;
     this.pierce = pierce;          // 可穿透敌人数
     this.radius = radius;
     this.color = color;
     this.life = life;
+    this.hostile = hostile;         // 敌方弹幕：采用截然不同的视觉语言
     this.hitSet = new Set();        // 已命中敌人，避免重复结算
     this.active = true;
   }
@@ -2421,15 +2862,50 @@ class Projectile {
     this.y += this.vy * dt;
   }
 
-  /** 渲染需在 'lighter' 叠加模式下进行（由 Game 统一批量设置） */
+  /**
+   * 渲染。两套视觉语言，避免玩家技能与敌方弹幕混淆：
+   *  - 玩家弹（叠加混合，由 Game 统一设置 'lighter'）：彗尾流光 + 白热核心，像“能量”。
+   *  - 敌方弹（普通混合，由 Game 单独绘制）：不透明实心球 + 暗色瞳孔 + 白描边，像“实体威胁”。
+   */
   render(ctx) {
-    // 缓存发光光晕（替代 shadowBlur）
+    if (this.hostile) { this._renderHostile(ctx); return; }
+
+    // 玩家能量弹：沿运动方向拖出彗尾
+    const sp = Math.hypot(this.vx, this.vy) || 1;
+    const ux = this.vx / sp, uy = this.vy / sp;
+    const tail = this.radius * 2.4;
+    ctx.globalAlpha = 0.45;
+    drawGlow(ctx, this.color, this.x - ux * tail, this.y - uy * tail, this.radius * 1.5);
+    ctx.globalAlpha = 0.8;
+    drawGlow(ctx, this.color, this.x - ux * tail * 0.5, this.y - uy * tail * 0.5, this.radius * 2.0);
+    ctx.globalAlpha = 1;
     drawGlow(ctx, this.color, this.x, this.y, this.radius * 2.6);
     // 白色实心核心
     ctx.fillStyle = "#ffffff";
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius * 0.6, 0, TAU);
     ctx.fill();
+  }
+
+  /** 敌方弹幕：实心敌意光球（普通混合下绘制） */
+  _renderHostile(ctx) {
+    const r = this.radius;
+    // 柔和敌意光晕
+    ctx.globalAlpha = 0.5;
+    drawGlow(ctx, this.color, this.x, this.y, r * 2.6);
+    ctx.globalAlpha = 1;
+    // 不透明实心色球（营造“实体威胁”，区别于玩家的能量流光）
+    ctx.fillStyle = this.color;
+    ctx.beginPath(); ctx.arc(this.x, this.y, r * 0.82, 0, TAU); ctx.fill();
+    // 暗色瞳孔（危险信号）
+    ctx.fillStyle = "#0a0410";
+    ctx.beginPath(); ctx.arc(this.x, this.y, r * 0.42, 0, TAU); ctx.fill();
+    // 高亮描边
+    ctx.strokeStyle = "#ffffff";
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(this.x, this.y, r * 0.82, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -2464,7 +2940,7 @@ class XPGem {
 
   get color() {
     return {
-      [DropType.XP]: "#00f0ff",
+      [DropType.XP]: "#8a5bff",
       [DropType.HEAL]: "#aaff00",
       [DropType.BOMB]: "#ff2bd6",
       [DropType.MAGNET]: "#ffd23f",
@@ -2566,6 +3042,7 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/systems/CollisionSystem.js"] = fu
  * 子弹↔敌人 经空间网格查询近邻，将复杂度从 O(子弹·敌人) 降到近似 O(子弹)。
  * 采用平方距离比较避免开方，性能友好。
  */
+const {CONFIG} = require("/Users/fiona/Desktop/neon-survivors/js/config.js");
 const {Vector2} = require("/Users/fiona/Desktop/neon-survivors/js/utils/Vector2.js");
 const {DropType} = require("/Users/fiona/Desktop/neon-survivors/js/entities/XPGem.js");
 
@@ -2654,17 +3131,23 @@ class CollisionSystem {
         game.particles.text(game.player.x, game.player.y - 30, "磁吸!", "#ffd23f");
         game.audio.levelup();
         break;
-      case DropType.BOMB:
-        // 清屏炸弹：对全场敌人造成大量伤害
+      case DropType.BOMB: {
+        // 湮灭：仅对玩家周围一定范围内的敌人造成大量伤害（非全屏）
+        const R = CONFIG.items.bombRadius;
+        const R2 = R * R;
         game.camera.shake(26);
         game.particles.burst(game.player.x, game.player.y, "#ff2bd6", 60, 500, 4, 0.8);
+        game.particles.ring(game.player.x, game.player.y, "#ff2bd6", R, 56, 3.4, 0.55); // 冲击波环：可视化波及范围
         for (const e of game.enemies) {
-          if (e.active && !e.isBoss) game.damageEnemy(e, 9999, false);
-          else if (e.active) game.damageEnemy(e, 300, false);
+          if (!e.active) continue;
+          if (Vector2.distSq(e, game.player) > R2) continue; // 范围外免疫
+          if (!e.isBoss) game.damageEnemy(e, 9999, false);
+          else game.damageEnemy(e, CONFIG.items.bombDamageBoss, false);
         }
         game.particles.text(game.player.x, game.player.y - 30, "湮灭!", "#ff2bd6");
         game.audio.nova();
         break;
+      }
     }
   }
 }
@@ -2809,6 +3292,341 @@ class MetaProgression {
 Object.assign(exports, { MetaProgression });
 };
 
+__defs["/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js"] = function (exports, require) {
+/**
+ * Skins.js — 局外「机库」外观系统（形象 + 抽卡 + 星级成长 + 专属特性）。
+ *
+ * 设计要点：
+ *  - 每个外观有稀有度（普通/稀有/史诗/传说），决定抽卡权重与特性强度。
+ *  - 外观具有「星级」（1..MAX_STAR）：重复抽到同一外观会升星，特性随星级增强；
+ *    满星后重复抽到则返还棱牌 ✦。
+ *  - 每个外观拥有**专属特性**，在开局注入玩家属性（与永久强化叠加）。
+ *  - 造型由 drawShip() 按 shape 分支绘制，各具辨识度。
+ *  - 抽卡货币「棱牌 ✦」独立于强化用的「暗物质核心 ◆」，避免两套养成互相挤占。
+ */
+const {TAU} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.js");
+
+const MAX_STAR = 5;
+
+/** 稀有度定义：抽卡权重、主题色、满星重复返还的棱牌 */
+const RARITY = {
+  common:    { key: "common",    name: "普通", color: "#8fa9c8", weight: 56, refund: 25 },
+  rare:      { key: "rare",      name: "稀有", color: "#00f0ff", weight: 28, refund: 55 },
+  epic:      { key: "epic",      name: "史诗", color: "#b06bff", weight: 12, refund: 120 },
+  legendary: { key: "legendary", name: "传说", color: "#ffd23f", weight: 4,  refund: 260 },
+};
+
+/** 抽卡定价（棱牌） */
+const GACHA = {
+  single: 100,   // 单抽
+  ten: 900,      // 十连（打折）
+};
+
+/**
+ * 外观表。
+ * perk(player, star)：把特性注入玩家（star 为当前星级 1..MAX_STAR）。
+ * perkText(star)：返回当前星级下的特性描述（用于 UI）。
+ */
+const SKINS = [
+  // ---------------- 普通 ----------------
+  {
+    id: "drift", name: "漂移者", rarity: "common", shape: "arrow", accent: "#00f0ff",
+    desc: "标准量产侦察机，操控均衡，是每位驾驶员的起点。",
+    perk: (p, s) => { p.speed *= 1 + 0.02 * s; },
+    perkText: (s) => `移动速度 +${2 * s}%`,
+  },
+  {
+    id: "ember", name: "余烬", rarity: "common", shape: "delta", accent: "#ff5c8a",
+    desc: "改装尾焰喷口的突进机，火力略有提升。",
+    perk: (p, s) => { p.damageMul *= 1 + 0.03 * s; },
+    perkText: (s) => `全武器伤害 +${3 * s}%`,
+  },
+  // ---------------- 稀有 ----------------
+  {
+    id: "aegis", name: "壁垒", rarity: "rare", shape: "shield", accent: "#5cffd2",
+    desc: "重装护盾型机体，正面防护出众。",
+    perk: (p, s) => { p.damageReduction = Math.min(0.7, p.damageReduction + 0.03 * s); },
+    perkText: (s) => `受到伤害 -${3 * s}%`,
+  },
+  {
+    id: "comet", name: "彗核", rarity: "rare", shape: "wing", accent: "#aaff00",
+    desc: "流线双翼高机动机，拾取范围与航速兼优。",
+    perk: (p, s) => { p.speed *= 1 + 0.03 * s; p.pickupRange *= 1 + 0.1 * s; },
+    perkText: (s) => `移速 +${3 * s}% · 拾取范围 +${10 * s}%`,
+  },
+  // ---------------- 史诗 ----------------
+  {
+    id: "phantom", name: "幻影", rarity: "epic", shape: "diamond", accent: "#b06bff",
+    desc: "相位隐匿机，瞄准系统经过精密校准。",
+    perk: (p, s) => { p.critChance = Math.min(1, p.critChance + 0.05 * s); },
+    perkText: (s) => `暴击率 +${5 * s}%`,
+  },
+  {
+    id: "vortex", name: "涡轮", rarity: "epic", shape: "ring", accent: "#00f0ff",
+    desc: "环形超频核心，武器循环极速。",
+    perk: (p, s) => { p.cooldownMul *= Math.pow(0.96, s); },
+    perkText: (s) => `武器攻速 +${Math.round((1 / Math.pow(0.96, s) - 1) * 100)}%`,
+  },
+  // ---------------- 传说 ----------------
+  {
+    id: "novalord", name: "新星君主", rarity: "legendary", shape: "star", accent: "#ffd23f",
+    desc: "王级战舰，火力与生命俱强，气场压制全场。",
+    perk: (p, s) => { p.damageMul *= 1 + 0.06 * s; p.maxHp += 12 * s; p.hp = p.maxHp; },
+    perkText: (s) => `全伤害 +${6 * s}% · 起始生命 +${12 * s}`,
+  },
+  {
+    id: "singularity", name: "奇点", rarity: "legendary", shape: "void", accent: "#ff2bd6",
+    desc: "吞噬一切的黑洞引擎：暴击、攻速与噬血于一身。",
+    perk: (p, s) => {
+      p.critChance = Math.min(1, p.critChance + 0.04 * s);
+      p.cooldownMul *= Math.pow(0.97, s);
+      p.lifesteal += 0.6 * s;
+    },
+    perkText: (s) => `暴击 +${4 * s}% · 攻速 +${Math.round((1 / Math.pow(0.97, s) - 1) * 100)}% · 击杀吸血 +${(0.6 * s).toFixed(1)}`,
+  },
+];
+
+const BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]));
+
+/** 首个默认拥有的外观 id */
+const DEFAULT_SKIN = "drift";
+
+class Skins {
+  static list() { return SKINS; }
+  static get(id) { return BY_ID[id] || BY_ID[DEFAULT_SKIN]; }
+  static rarityOf(id) { return RARITY[Skins.get(id).rarity]; }
+
+  // ---------------- 定价与产出 ----------------
+  static priceSingle() { return GACHA.single; }
+  static priceTen() { return GACHA.ten; }
+
+  /**
+   * 依据单局战绩产出棱牌 ✦：击杀、Boss、存活时长各有贡献。
+   * 与暗物质核心相互独立，鼓励持续挑战以解锁更多外观。
+   */
+  static reward(stats) {
+    const kills = Math.max(0, Math.floor(stats.kills || 0));
+    const bossKills = Math.max(0, Math.floor(stats.bossKills || 0));
+    const time = Math.max(0, stats.time || 0);
+    return Math.floor(kills * 0.5 + bossKills * 40 + time * 0.4);
+  }
+
+  /** 拥有的外观 id -> 星级（>=1 表示已拥有） */
+  static starOf(save, id) {
+    const s = save.skins && save.skins.owned ? save.skins.owned[id] : 0;
+    return Math.max(0, Math.min(MAX_STAR, Math.floor(s || 0)));
+  }
+  static owns(save, id) { return Skins.starOf(save, id) > 0; }
+
+  /** 当前选中的外观（回退到默认） */
+  static selected(save) {
+    const id = save.skins && save.skins.selected;
+    return Skins.owns(save, id) ? id : DEFAULT_SKIN;
+  }
+
+  static select(save, id) {
+    if (Skins.owns(save, id)) { save.skins.selected = id; return true; }
+    return false;
+  }
+
+  /** 把当前选中外观的专属特性注入玩家（在 MetaProgression.applyTo 之后调用） */
+  static applyTo(player, save) {
+    const id = Skins.selected(save);
+    const skin = Skins.get(id);
+    const star = Math.max(1, Skins.starOf(save, id));
+    player.skin = { id: skin.id, shape: skin.shape, accent: skin.accent, star };
+    if (skin.perk) skin.perk(player, star);
+  }
+
+  // ---------------- 抽卡 ----------------
+  /** 本地日期字符串 YYYY-MM-DD（用于每日免费抽卡的判定，按玩家本地时区） */
+  static _today() {
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  }
+
+  /** 今天是否还能领取每日免费抽卡 */
+  static canFreeDraw(save) {
+    return (save.skins && save.skins.lastFreeDraw) !== Skins._today();
+  }
+
+  /**
+   * 领取每日免费抽卡：与付费抽卡等价，但不消耗棱牌，每天一次。
+   * 返回抽卡结果对象，若今日已领取则返回 null。
+   */
+  static freeDraw(save) {
+    if (!Skins.canFreeDraw(save)) return null;
+    save.skins.lastFreeDraw = Skins._today();
+    return Skins.drawOne(save);
+  }
+
+  /** 按稀有度权重随机抽取一个外观 */
+  static _rollSkin() {
+    const total = Object.values(RARITY).reduce((a, r) => a + r.weight, 0);
+    let r = Math.random() * total;
+    let picked = "common";
+    for (const rar of Object.values(RARITY)) {
+      if (r < rar.weight) { picked = rar.key; break; }
+      r -= rar.weight;
+    }
+    const pool = SKINS.filter((s) => s.rarity === picked);
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  /**
+   * 抽一次卡（调用方需先校验并扣除棱牌）。
+   * 返回 { skin, star, isNew, upgraded, refund }。
+   * - 新外观：加入并置 1 星。
+   * - 已有未满星：升 1 星。
+   * - 已满星：返还对应稀有度棱牌。
+   */
+  static drawOne(save) {
+    const skin = Skins._rollSkin();
+    const prev = Skins.starOf(save, skin.id);
+    let isNew = false, upgraded = false, refund = 0;
+    if (prev <= 0) { isNew = true; save.skins.owned[skin.id] = 1; }
+    else if (prev < MAX_STAR) { upgraded = true; save.skins.owned[skin.id] = prev + 1; }
+    else { refund = RARITY[skin.rarity].refund; save.skins.shards += refund; }
+    return { skin, star: Skins.starOf(save, skin.id), isNew, upgraded, refund };
+  }
+
+  // ---------------- 渲染 ----------------
+  /**
+   * 绘制机体（以原点为中心、朝上 -y）。调用方负责 translate/rotate。
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {string} shape 造型标识
+   * @param {number} r     半径
+   * @param {string} color 主色（无敌闪烁时可传入白色）
+   */
+  static drawShip(ctx, shape, r, color) {
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = color;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+
+    switch (shape) {
+      case "delta": { // 后掠双翼突进机
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 1.15);
+        ctx.lineTo(r * 1.02, r * 0.95);
+        ctx.lineTo(r * 0.34, r * 0.5);
+        ctx.lineTo(0, r * 0.85);
+        ctx.lineTo(-r * 0.34, r * 0.5);
+        ctx.lineTo(-r * 1.02, r * 0.95);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
+      case "shield": { // 六边盾形重装
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = -Math.PI / 2 + i * (TAU / 6);
+          const px = Math.cos(a) * r, py = Math.sin(a) * r;
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        // 内圈盾纹
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.55, 0, TAU); ctx.stroke();
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case "wing": { // 流线双翼
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 1.1);
+        ctx.quadraticCurveTo(r * 1.2, 0, r * 0.5, r);
+        ctx.quadraticCurveTo(0, r * 0.55, -r * 0.5, r);
+        ctx.quadraticCurveTo(-r * 1.2, 0, 0, -r * 1.1);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
+      case "diamond": { // 相位菱形
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 1.1);
+        ctx.lineTo(r * 0.72, 0);
+        ctx.lineTo(0, r * 1.1);
+        ctx.lineTo(-r * 0.72, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 0.45;
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 0.55); ctx.lineTo(r * 0.36, 0);
+        ctx.lineTo(0, r * 0.55); ctx.lineTo(-r * 0.36, 0);
+        ctx.closePath(); ctx.stroke();
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case "ring": { // 超频环核
+        ctx.lineWidth = r * 0.34;
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.78, 0, TAU); ctx.stroke();
+        ctx.lineWidth = 2;
+        // 前向指示尖
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 1.15);
+        ctx.lineTo(r * 0.28, -r * 0.6);
+        ctx.lineTo(-r * 0.28, -r * 0.6);
+        ctx.closePath(); ctx.fill();
+        break;
+      }
+      case "star": { // 王级多角星
+        const spikes = 5;
+        ctx.beginPath();
+        for (let i = 0; i < spikes * 2; i++) {
+          const rad = i % 2 === 0 ? r * 1.2 : r * 0.5;
+          const a = -Math.PI / 2 + i * (Math.PI / spikes);
+          const px = Math.cos(a) * rad, py = Math.sin(a) * rad;
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
+      case "void": { // 奇点双环
+        ctx.lineWidth = r * 0.22;
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.95, 0, TAU); ctx.stroke();
+        ctx.globalAlpha = 0.6;
+        ctx.beginPath(); ctx.arc(0, -r * 0.15, r * 0.55, 0, TAU); ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 2;
+        // 黑洞核心
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#05060e";
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.4, 0, TAU); ctx.fill();
+        return; // 已绘制核心，直接返回
+      }
+      case "arrow":
+      default: { // 经典侦察三角
+        ctx.beginPath();
+        ctx.moveTo(0, -r);
+        ctx.lineTo(r * 0.8, r);
+        ctx.lineTo(0, r * 0.5);
+        ctx.lineTo(-r * 0.8, r);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
+    }
+
+    // 通用中心舱
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#05060e";
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.28, 0, TAU); ctx.fill();
+    // 玩家专属：白热能量核心（区别于敌人的暗核/同色核，强化“这是玩家”辨识）
+    ctx.fillStyle = "#ffffff";
+    ctx.shadowBlur = 8; ctx.shadowColor = color;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.14, 0, TAU); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+Object.assign(exports, { MAX_STAR, RARITY, GACHA, DEFAULT_SKIN, Skins });
+};
+
 __defs["/Users/fiona/Desktop/neon-survivors/js/systems/SpawnSystem.js"] = function (exports, require) {
 /**
  * SpawnSystem.js — 敌人生成系统。
@@ -2941,25 +3759,25 @@ const UPGRADES = [
   // ---- 武器解锁 ----
   {
     id: "unlock_orbit", icon: "◓", name: "轨道核", accent: "#8a5bff", maxLevel: 1, unlock: true,
-    desc: "召唤 2 颗环绕光球，碰触敌人造成伤害。",
+    desc: "召唤 2 颗环绕光球，碰触敌人造成伤害",
     available: (p) => p.weapons.orbit.count === 0,
     apply: (p) => { p.weapons.orbit.count = 2; },
   },
   {
     id: "unlock_aura", icon: "❂", name: "灼蚀场", accent: "#aaff00", maxLevel: 1, unlock: true,
-    desc: "在身边展开灼烧领域，持续灼伤范围内敌人。",
+    desc: "在身边展开灼烧领域，持续灼伤范围内敌人",
     available: (p) => p.weapons.aura.radius === 0,
     apply: (p) => { p.weapons.aura.radius = 110; },
   },
   {
     id: "unlock_nova", icon: "✸", name: "超新星", accent: "#ff2bd6", maxLevel: 1, unlock: true,
-    desc: "每 4 秒爆发一圈环形弹幕，可穿透敌人。",
+    desc: "每 4 秒爆发一圈环形弹幕，可穿透敌人",
     available: (p) => p.weapons.nova.cooldown === 0,
     apply: (p) => { p.weapons.nova.cooldown = 4; },
   },
   {
     id: "unlock_chain", icon: "⚡", name: "电弧链", accent: "#7df9ff", maxLevel: 1, unlock: true,
-    desc: "每 1.4 秒放出电弧，在最近的 3 个敌人间跳跃。",
+    desc: "每 1.4 秒放出电弧，在最近的 3 个敌人间跳跃",
     available: (p) => p.weapons.chain.cooldown === 0,
     apply: (p) => { p.weapons.chain.cooldown = 1.4; p.weapons.chain.chains = 3; },
   },
@@ -2967,63 +3785,63 @@ const UPGRADES = [
   // ---- 武器进阶 ----
   {
     id: "blaster_count", icon: "✦", name: "多重弹道", accent: "#00f0ff", maxLevel: 5,
-    desc: "脉冲枪额外发射 +1 发子弹（散射）。",
+    desc: "脉冲枪额外发射 +1 发子弹",
     apply: (p) => { p.weapons.blaster.count++; },
   },
   {
     id: "blaster_rate", icon: "✦", name: "高速循环", accent: "#00f0ff", maxLevel: 6,
-    desc: "脉冲枪射速 +22%。",
+    desc: "脉冲枪射速 +22%",
     apply: (p) => { p.weapons.blaster.fireRate *= 1.22; },
   },
   {
     id: "blaster_pierce", icon: "✦", name: "穿甲弹芯", accent: "#00f0ff", maxLevel: 5,
-    desc: "脉冲枪子弹额外穿透 +1 个敌人。",
+    desc: "脉冲枪子弹额外穿透 +1 个敌人",
     apply: (p) => { p.weapons.blaster.pierce++; },
   },
   {
     id: "blaster_dmg", icon: "✦", name: "聚能弹头", accent: "#00f0ff", maxLevel: 6,
-    desc: "脉冲枪单发伤害 +6。",
+    desc: "脉冲枪单发伤害 +6",
     apply: (p) => { p.weapons.blaster.damage += 6; },
   },
   {
     id: "orbit_more", icon: "◓", name: "轨道增殖", accent: "#8a5bff", maxLevel: 6,
-    desc: "轨道核 +1 颗，旋转更快。",
+    desc: "轨道核 +1 颗，旋转更快",
     available: (p) => p.weapons.orbit.count > 0,
     apply: (p) => { p.weapons.orbit.count++; p.weapons.orbit.rotSpeed += 0.3; },
   },
   {
     id: "orbit_dmg", icon: "◓", name: "轨道过载", accent: "#8a5bff", maxLevel: 5,
-    desc: "轨道核伤害 +50%，半径 +15。",
+    desc: "轨道核伤害 +50%，半径 +15",
     available: (p) => p.weapons.orbit.count > 0,
     apply: (p) => { p.weapons.orbit.damage *= 1.5; p.weapons.orbit.radius += 15; },
   },
   {
     id: "aura_size", icon: "❂", name: "领域扩张", accent: "#aaff00", maxLevel: 6,
-    desc: "灼蚀场范围 +28%，伤害 +25%。",
+    desc: "灼蚀场范围 +28%，伤害 +25%",
     available: (p) => p.weapons.aura.radius > 0,
     apply: (p) => { p.weapons.aura.radius *= 1.28; p.weapons.aura.damage *= 1.25; },
   },
   {
     id: "nova_fast", icon: "✸", name: "坍缩加速", accent: "#ff2bd6", maxLevel: 5,
-    desc: "超新星冷却 -18%，弹幕 +4 发。",
+    desc: "超新星冷却 -18%，弹幕 +4 发",
     available: (p) => p.weapons.nova.cooldown > 0,
     apply: (p) => { p.weapons.nova.cooldown *= 0.82; p.weapons.nova.bullets += 4; },
   },
   {
     id: "nova_dmg", icon: "✸", name: "恒星熔炉", accent: "#ff2bd6", maxLevel: 5,
-    desc: "超新星伤害 +40%。",
+    desc: "超新星伤害 +40%",
     available: (p) => p.weapons.nova.cooldown > 0,
     apply: (p) => { p.weapons.nova.damage *= 1.4; },
   },
   {
     id: "chain_more", icon: "⚡", name: "电弧增幅", accent: "#7df9ff", maxLevel: 5,
-    desc: "电弧链 +1 跳跃目标，冷却 -12%。",
+    desc: "电弧链 +1 跳跃目标，冷却 -12%",
     available: (p) => p.weapons.chain.chains > 0,
     apply: (p) => { p.weapons.chain.chains++; p.weapons.chain.cooldown *= 0.88; },
   },
   {
     id: "chain_dmg", icon: "⚡", name: "过载电容", accent: "#7df9ff", maxLevel: 5,
-    desc: "电弧链伤害 +45%，跳跃距离 +30。",
+    desc: "电弧链伤害 +45%，跳跃距离 +30",
     available: (p) => p.weapons.chain.chains > 0,
     apply: (p) => { p.weapons.chain.damage *= 1.45; p.weapons.chain.range += 30; },
   },
@@ -3031,42 +3849,42 @@ const UPGRADES = [
   // ---- 被动属性 ----
   {
     id: "power", icon: "⚡", name: "过载核心", accent: "#ffd23f", maxLevel: 8,
-    desc: "所有武器伤害 +15%。",
+    desc: "所有武器伤害 +15%",
     apply: (p) => { p.damageMul *= 1.15; },
   },
   {
     id: "speed", icon: "➤", name: "推进强化", accent: "#00f0ff", maxLevel: 5,
-    desc: "移动速度 +12%。",
+    desc: "移动速度 +12%",
     apply: (p) => { p.speed *= 1.12; },
   },
   {
     id: "maxhp", icon: "♥", name: "装甲扩容", accent: "#ff5c8a", maxLevel: 8,
-    desc: "最大生命 +25，并立即回复。",
+    desc: "最大生命 +25，并立即回复",
     apply: (p) => { p.maxHp += 25; p.heal(25); },
   },
   {
     id: "regen", icon: "✚", name: "纳米修复", accent: "#aaff00", maxLevel: 5,
-    desc: "每秒回复 +1.5 生命。",
+    desc: "每秒回复 +1.5 生命",
     apply: (p) => { p.regen += 1.5; },
   },
   {
     id: "magnet", icon: "⬇", name: "引力线圈", accent: "#ffd23f", maxLevel: 4,
-    desc: "经验拾取范围 +50%。",
+    desc: "经验拾取范围 +50%",
     apply: (p) => { p.pickupRange *= 1.5; },
   },
   {
     id: "crit_up", icon: "✧", name: "精准校准", accent: "#ff8a3d", maxLevel: 6,
-    desc: "暴击率 +8%（暴击造成 2 倍伤害）。",
+    desc: "暴击率 +8%（暴击造成 2 倍伤害）",
     apply: (p) => { p.critChance = Math.min(1, p.critChance + 0.08); },
   },
   {
     id: "haste_up", icon: "⟳", name: "超频循环", accent: "#00f0ff", maxLevel: 5,
-    desc: "所有武器攻速 +8%。",
+    desc: "所有武器攻速 +8%",
     apply: (p) => { p.cooldownMul *= 0.92; },
   },
   {
     id: "lifesteal", icon: "❤", name: "噬能装甲", accent: "#ff5c8a", maxLevel: 5,
-    desc: "每次击杀回复 +1.2 生命。",
+    desc: "每次击杀回复 +1.2 生命",
     apply: (p) => { p.lifesteal += 1.2; },
   },
 ];
@@ -3213,8 +4031,8 @@ class HUD {
     ctx.font = "600 12px 'JetBrains Mono', monospace";
     ctx.fillText(`LV ${player.level}`, 30, 62);
 
-    // ---- 顶部：Boss 血条 ----
-    if (game.boss && game.boss.active) this._bossBar(ctx, game.boss, W);
+    // ---- 顶部：Boss 血条（多个 Boss 并存时纵向排列，互不重叠，各带专属徽标）----
+    this._bossBars(ctx, game.bosses, W);
 
     // ---- 左下：已装备武器 ----
     this._weapons(ctx, player, H);
@@ -3240,24 +4058,44 @@ class HUD {
     ctx.restore();
   }
 
-  /** 顶部醒目的 Boss 血条 */
-  _bossBar(ctx, boss, W) {
+  /** 顶部 Boss 血条组：多个 Boss 同时存在时纵向堆叠，各占一行，互不重叠 */
+  _bossBars(ctx, bosses, W) {
+    if (!bosses || !bosses.length) return;
+    const list = bosses.filter((b) => b && b.active);
+    if (!list.length) return;
+
     const w = Math.min(560, W * 0.6);
     const x = (W - w) / 2;
-    const y = 84;
-    const h = 14;
+    const rowH = 34;              // 每个 Boss 血条行的总高度（标签 + 血条 + 间距）
+    let y = 84;
+    for (const boss of list) {
+      this._bossBar(ctx, boss, x, y, w);
+      y += rowH;
+    }
+  }
+
+  /** 单个 Boss 血条：左侧专属徽标 + 名称/血量标签 + 血条 */
+  _bossBar(ctx, boss, x, y, w) {
+    const h = 12;
     const ratio = Math.max(0, boss.hp / boss.maxHp);
     const color = boss.color || "#ff2bd6";
     const name = (boss.def && boss.def.name) || "母核";
+    const kind = boss.kind || 0;
+
+    // 徽标绘制在血条左侧，与血条中心竖直对齐
+    this._bossEmblem(ctx, x - 14, y + h / 2, 8, kind, color);
 
     ctx.save();
-    ctx.textAlign = "center";
-    ctx.font = "700 13px 'JetBrains Mono', monospace";
+    // 名称 + 血量（血条上方，左对齐至血条起点）
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "700 12px 'JetBrains Mono', monospace";
     ctx.fillStyle = color;
     ctx.shadowBlur = 8; ctx.shadowColor = color;
-    ctx.fillText(`⚠ ${name}  ${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`, W / 2, y - 8);
+    ctx.fillText(`⚠ ${name}  ${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`, x, y - 4);
     ctx.shadowBlur = 0;
 
+    // 血条底槽 + 前景
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(x, y, w, h);
     ctx.fillStyle = color;
@@ -3268,6 +4106,54 @@ class HUD {
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w, h);
     ctx.restore();
+  }
+
+  /** Boss 专属徽标：与场景内 Boss 造型呼应（母核=八边形 / 裂能体=六角星 / 湮灭者=六边形） */
+  _bossEmblem(ctx, cx, cy, r, kind, color) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 6; ctx.shadowColor = color;
+    if (kind === 1) {
+      this._emblemStar(ctx, 6, r, r * 0.5);
+    } else if (kind === 2) {
+      this._emblemPoly(ctx, 6, r);
+      this._emblemPoly(ctx, 6, r * 0.6);
+    } else {
+      this._emblemPoly(ctx, 8, r);
+    }
+    // 亮核
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.24, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  _emblemPoly(ctx, sides, r) {
+    ctx.beginPath();
+    for (let i = 0; i <= sides; i++) {
+      const a = (i / sides) * TAU - Math.PI / 2;
+      const px = Math.cos(a) * r, py = Math.sin(a) * r;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.globalAlpha = 0.28; ctx.fill();
+    ctx.globalAlpha = 1; ctx.stroke();
+  }
+
+  _emblemStar(ctx, points, rOuter, rInner) {
+    ctx.beginPath();
+    for (let i = 0; i <= points * 2; i++) {
+      const rr = i % 2 === 0 ? rOuter : rInner;
+      const a = (i / (points * 2)) * TAU - Math.PI / 2;
+      const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.globalAlpha = 0.28; ctx.fill();
+    ctx.globalAlpha = 1; ctx.stroke();
   }
 
   _bar(ctx, x, y, w, h, ratio, color, bg) {
@@ -3346,6 +4232,7 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/ui/Screens.js"] = function (expor
 const {formatTime} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.js");
 const {UpgradeSystem} = require("/Users/fiona/Desktop/neon-survivors/js/systems/UpgradeSystem.js");
 const {MetaProgression} = require("/Users/fiona/Desktop/neon-survivors/js/systems/MetaProgression.js");
+const {Skins, RARITY, MAX_STAR} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
 
 class Screens {
   constructor(root) {
@@ -3356,9 +4243,9 @@ class Screens {
 
   clear() { this.root.innerHTML = ""; }
 
-  _make(html) {
+  _make(html, extra = "") {
     const div = document.createElement("div");
-    div.className = "screen";
+    div.className = extra ? `screen ${extra}` : "screen";
     div.innerHTML = html;
     return div;
   }
@@ -3384,13 +4271,20 @@ class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, { onStart, onShop }) {
+  showMenu(save, { onStart, onResume, onShop, onHangar }) {
     this.clear();
     const b = save.best;
+    const resumeBtn = onResume
+      ? `<button class="btn" id="btn-resume">↩ 继续上局</button>`
+      : "";
     const el = this._make(`
       <div class="sub">ROGUELITE · SURVIVOR · 霓虹幸存者</div>
       <h1 class="neon-title">NEON DRIFT</h1>
-      <div class="cores-balance">◆ ${save.cores} <span>暗物质核心</span></div>
+      <div class="cores-balance">
+        <span class="cur"><span class="cur-core">◆ ${save.cores}</span> <span class="lbl">暗物质核心</span></span>
+        <span class="cur-sep">·</span>
+        <span class="cur"><span class="shard-amt">✦ ${save.skins.shards}</span> <span class="lbl">棱牌</span></span>
+      </div>
       <div class="best-row">
         <span>最佳存活 <b>${formatTime(b.time)}</b></span>
         <span>最高击杀 <b>${b.kills}</b></span>
@@ -3398,14 +4292,18 @@ class Screens {
         <span>击败母核 <b>${b.bossKills}</b></span>
       </div>
       <div class="menu-btns">
-        <button class="btn" id="btn-start">▶ 开始游戏</button>
-        <button class="btn btn-2" id="btn-shop">◆ 强化实验室</button>
+        ${resumeBtn}
+        <button class="btn ${onResume ? "btn-2" : ""}" id="btn-start">▶ ${onResume ? "重新开始" : "开始游戏"}</button>
+        <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
+        <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
       </div>
       <div class="hint">移动: W A S D / 方向键 &nbsp;·&nbsp; 暂停: P / ESC &nbsp;·&nbsp; 武器自动开火</div>
-    `);
+    `, "menu-screen");
     this.root.appendChild(el);
     el.querySelector("#btn-start").addEventListener("click", onStart);
     el.querySelector("#btn-shop").addEventListener("click", onShop);
+    el.querySelector("#btn-hangar").addEventListener("click", onHangar);
+    if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
   }
 
   /** 强化实验室：花费核心购买永久升级 */
@@ -3414,7 +4312,7 @@ class Screens {
     const el = this._make(`
       <div class="sub">META LAB · 强化实验室</div>
       <h2 class="neon-title">永久强化</h2>
-      <div class="cores-balance">◆ ${save.cores} <span>可用核心</span></div>
+      <div class="cores-balance"><span class="cur-core">◆ ${save.cores}</span> <span class="lbl">可用核心</span></div>
       <div class="shop-list"></div>
       <button class="btn" id="btn-back">← 返回</button>
       <div class="hint">永久加成在每局开局自动生效 · 失败也在变强</div>
@@ -3491,20 +4389,24 @@ class Screens {
   }
 
   /** 暂停（展示当前能力总览） */
-  showPause(player, onResume) {
+  showPause(player, onResume, onQuit) {
     this.clear();
     const el = this._make(`
       <h2 class="neon-title">已暂停</h2>
       ${this._loadoutHTML(player, "能力总览")}
-      <button class="btn" id="btn-resume">继续</button>
-      <div class="hint">按 P / ESC 继续</div>
+      <div class="menu-btns">
+        <button class="btn" id="btn-resume">继续</button>
+        <button class="btn btn-quit" id="btn-quit">✕ 结束本局</button>
+      </div>
+      <div class="hint">按 P / ESC 继续 &nbsp;·&nbsp; 主动结束本局不会有奖励结算</div>
     `);
     this.root.appendChild(el);
     el.querySelector("#btn-resume").addEventListener("click", onResume);
+    if (onQuit) el.querySelector("#btn-quit").addEventListener("click", onQuit);
   }
 
   /** 结算 */
-  showGameOver(stats, { reward, records, save }, { onRestart, onShop, onMenu }) {
+  showGameOver(stats, { reward, shardReward, records, save }, { onRestart, onShop, onHangar, onMenu }) {
     this.clear();
     const tag = (on) => (on ? ` <span class="rec">新纪录!</span>` : "");
     const el = this._make(`
@@ -3514,17 +4416,142 @@ class Screens {
       <div class="stat-line">击杀总数 <b>${stats.kills}</b>${tag(records.kills)}</div>
       <div class="stat-line">到达等级 <b>${stats.level}</b>${tag(records.level)}</div>
       <div class="stat-line">击败母核 <b>${stats.bossKills}</b>${tag(records.bossKills)}</div>
-      <div class="reward-box">本局获得 <b>◆ ${reward}</b> &nbsp;·&nbsp; 余额 ◆ ${save.cores}</div>
+      <div class="reward-box">本局获得 <b>◆ ${reward}</b> &nbsp;·&nbsp; <b class="shard-amt">✦ ${shardReward}</b></div>
       <div class="menu-btns">
         <button class="btn" id="btn-restart">↻ 再来一局</button>
-        <button class="btn btn-2" id="btn-shop">◆ 强化实验室</button>
+        <button class="btn btn-2" id="btn-hangar">✦ 机库</button>
+        <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
         <button class="btn btn-3" id="btn-menu">主菜单</button>
       </div>
     `);
     this.root.appendChild(el);
     el.querySelector("#btn-restart").addEventListener("click", onRestart);
     el.querySelector("#btn-shop").addEventListener("click", onShop);
+    el.querySelector("#btn-hangar").addEventListener("click", onHangar);
     el.querySelector("#btn-menu").addEventListener("click", onMenu);
+  }
+
+  // ---------------- 机库（外观选择 + 抽卡） ----------------
+
+  /** 星级显示：●●●○○ */
+  _stars(star, max = MAX_STAR) {
+    let s = "";
+    for (let i = 0; i < max; i++) s += i < star ? "★" : "☆";
+    return s;
+  }
+
+  /** 渲染单个外观造型到独立 canvas（用于机库卡片预览） */
+  _drawSkinPreview(canvas, skin, color) {
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    Skins.drawShip(ctx, skin.shape, Math.min(w, h) * 0.3, color);
+    ctx.restore();
+  }
+
+  /** 机库主界面：外观网格 + 抽卡按钮 */
+  showHangar(save, { onSelect, onDraw, onFreeDraw, onBack }) {
+    this.clear();
+    const shards = save.skins.shards;
+    const selected = Skins.selected(save);
+    const canFree = Skins.canFreeDraw(save);
+    const freeBtn = canFree
+      ? `<button class="btn free-draw" id="btn-free">🎁 每日免费抽卡</button>`
+      : `<button class="btn free-draw claimed" id="btn-free" disabled>✓ 今日已领取</button>`;
+    const el = this._make(`
+      <div class="sub">HANGAR · 机库</div>
+      <h2 class="neon-title">战机外观</h2>
+      <div class="cores-balance"><span class="shard-amt">✦ ${shards}</span> <span class="lbl">棱牌</span></div>
+      <div class="gacha-bar">
+        ${freeBtn}
+        <button class="btn gacha-btn" id="btn-draw1">单抽 · ✦ ${Skins.priceSingle()}</button>
+        <button class="btn btn-2 gacha-btn" id="btn-draw10">十连 · ✦ ${Skins.priceTen()}</button>
+      </div>
+      <div class="skin-grid"></div>
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+      <div class="hint">每天可免费抽一次 · 重复抽取升星强化专属特性 · 满星后返还棱牌</div>
+    `);
+    const grid = el.querySelector(".skin-grid");
+    for (const skin of Skins.list()) {
+      const rar = RARITY[skin.rarity];
+      const star = Skins.starOf(save, skin.id);
+      const owned = star > 0;
+      const isSel = owned && skin.id === selected;
+      const card = document.createElement("div");
+      card.className = `skin-card rar-${skin.rarity}${owned ? "" : " locked"}${isSel ? " selected" : ""}`;
+      card.style.setProperty("--accent", rar.color);
+      card.innerHTML = `
+        <div class="skin-rar" style="color:${rar.color}">${rar.name}</div>
+        <canvas class="skin-canvas" width="120" height="120"></canvas>
+        <div class="skin-name">${owned ? skin.name : "？？？"}</div>
+        <div class="skin-stars" style="color:${rar.color}">${owned ? this._stars(star) : this._stars(0)}</div>
+        <div class="skin-perk">${owned ? skin.perkText(Math.max(1, star)) : "未解锁 · 抽卡获取"}</div>
+        <div class="skin-action"></div>
+      `;
+      const canvas = card.querySelector(".skin-canvas");
+      this._drawSkinPreview(canvas, skin, owned ? skin.accent : "#3a4356");
+      const action = card.querySelector(".skin-action");
+      if (owned) {
+        if (isSel) {
+          action.innerHTML = `<span class="skin-equipped">已装备</span>`;
+        } else {
+          const btn = document.createElement("button");
+          btn.className = "skin-select";
+          btn.textContent = "装备";
+          btn.addEventListener("click", () => onSelect(skin.id));
+          action.appendChild(btn);
+        }
+      } else {
+        action.innerHTML = `<span class="skin-lockicon">🔒</span>`;
+      }
+      grid.appendChild(card);
+    }
+    this.root.appendChild(el);
+
+    const draw1 = el.querySelector("#btn-draw1");
+    const draw10 = el.querySelector("#btn-draw10");
+    if (shards < Skins.priceSingle()) { draw1.disabled = true; draw1.classList.add("poor"); }
+    if (shards < Skins.priceTen()) { draw10.disabled = true; draw10.classList.add("poor"); }
+    draw1.addEventListener("click", () => onDraw(1));
+    draw10.addEventListener("click", () => onDraw(10));
+    if (canFree && onFreeDraw) el.querySelector("#btn-free").addEventListener("click", onFreeDraw);
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+  }
+
+  /** 抽卡结果展示 */
+  showGachaResult(save, results, onClose) {
+    this.clear();
+    const el = this._make(`
+      <div class="sub">SUMMON RESULT</div>
+      <h2 class="neon-title">抽卡结果</h2>
+      <div class="cores-balance"><span class="shard-amt">✦ ${save.skins.shards}</span> <span class="lbl">棱牌</span></div>
+      <div class="gacha-result"></div>
+      <button class="btn" id="btn-close">确定</button>
+    `);
+    const box = el.querySelector(".gacha-result");
+    results.forEach((res, i) => {
+      const skin = res.skin;
+      const rar = RARITY[skin.rarity];
+      const cell = document.createElement("div");
+      cell.className = `gr-cell rar-${skin.rarity}`;
+      cell.style.setProperty("--accent", rar.color);
+      cell.style.animationDelay = `${i * 0.05}s`;
+      const badge = res.isNew ? `<span class="gr-tag new">NEW</span>`
+        : res.upgraded ? `<span class="gr-tag up">升星 ★${res.star}</span>`
+        : `<span class="gr-tag refund">返还 ✦${res.refund}</span>`;
+      cell.innerHTML = `
+        <div class="gr-rar" style="color:${rar.color}">${rar.name}</div>
+        <canvas class="gr-canvas" width="96" height="96"></canvas>
+        <div class="gr-name">${skin.name}</div>
+        ${badge}
+      `;
+      this._drawSkinPreview(cell.querySelector(".gr-canvas"), skin, skin.accent);
+      box.appendChild(cell);
+    });
+    this.root.appendChild(el);
+    el.querySelector("#btn-close").addEventListener("click", onClose);
   }
 }
 

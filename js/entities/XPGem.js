@@ -25,7 +25,7 @@ export class XPGem {
 
   get color() {
     return {
-      [DropType.XP]: "#00f0ff",
+      [DropType.XP]: "#8a5bff",
       [DropType.HEAL]: "#aaff00",
       [DropType.BOMB]: "#ff2bd6",
       [DropType.MAGNET]: "#ffd23f",

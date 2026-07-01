@@ -80,6 +80,24 @@ export class ParticleSystem {
     if (p) p.spawn(x, y, rand(-20, 20), rand(-20, 20), life, color, size);
   }
 
+  /** 定向单粒子：给定初速度方向（用于引擎尾焰等有方向的拖尾） */
+  spark(x, y, vx, vy, life, color, size = 2.5) {
+    const p = this._obtain();
+    if (p) p.spawn(x, y, vx, vy, life, color, size);
+  }
+
+  /** 环形冲击波：沿指定半径的圆周撒一圈向外扩散的粒子，用于可视化范围效果（如湮灭波及范围） */
+  ring(x, y, color, radius, count = 48, size = 3, life = 0.5) {
+    for (let i = 0; i < count; i++) {
+      const p = this._obtain();
+      if (!p) break;
+      const a = (i / count) * TAU;
+      const s = rand(70, 140);
+      p.spawn(x + Math.cos(a) * radius, y + Math.sin(a) * radius,
+        Math.cos(a) * s, Math.sin(a) * s, rand(life * 0.6, life), color, size);
+    }
+  }
+
   damageText(x, y, amount, crit = false) {
     const t = this._obtainText();
     if (t) t.spawn(x + rand(-8, 8), y, Math.round(amount), crit ? "#ffd23f" : "#ffffff", crit ? 22 : 15);
