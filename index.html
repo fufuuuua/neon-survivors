@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>NEON DRIFT · 霓虹幸存者</title>
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+
+    <!-- 扫描线 / 故障滤镜叠层（纯 CSS 美术） -->
+    <div class="fx-scanlines"></div>
+    <div class="fx-vignette"></div>
+
+    <!-- 界面层由 JS 动态渲染 -->
+    <div id="ui-root"></div>
+  </div>
+
+  <noscript>本游戏需要启用 JavaScript。</noscript>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

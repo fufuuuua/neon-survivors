@@ -1,0 +1,12 @@
+{
+  "name": "neon-drift",
+  "version": "1.0.0",
+  "description": "NEON DRIFT · 霓虹幸存者 —— 纯原生 HTML5 Canvas roguelite 生存射击小游戏",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "python3 -m http.server 8000",
+    "serve:dist": "python3 -m http.server 8000 --directory dist"
+  },
+  "license": "MIT"
+}
