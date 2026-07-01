@@ -152,11 +152,6 @@ const UPGRADES = [
     desc: "所有武器攻速 +8%",
     apply: (p) => { p.cooldownMul *= 0.92; },
   },
-  {
-    id: "lifesteal", icon: "❤", name: "噬能装甲", accent: "#ff5c8a", maxLevel: 5,
-    desc: "每次击杀回复 +1.2 生命",
-    apply: (p) => { p.lifesteal += 1.2; },
-  },
 ];
 
 const BY_ID = Object.fromEntries(UPGRADES.map((u) => [u.id, u]));

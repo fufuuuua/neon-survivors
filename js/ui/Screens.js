@@ -70,7 +70,9 @@ export class Screens {
         <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
       </div>
-      <div class="hint">移动: W A S D / 方向键 &nbsp;·&nbsp; 暂停: P / ESC &nbsp;·&nbsp; 武器自动开火</div>
+      <div class="hint">${this.isTouch
+        ? "拖动屏幕移动 &nbsp;·&nbsp; 点击 ⏸ 暂停 &nbsp;·&nbsp; 武器自动开火"
+        : "移动: W A S D / 方向键 &nbsp;·&nbsp; 暂停: P / ESC &nbsp;·&nbsp; 武器自动开火"}</div>
     `, "menu-screen");
     this.root.appendChild(el);
     el.querySelector("#btn-start").addEventListener("click", onStart);
@@ -192,7 +194,7 @@ export class Screens {
       <div class="reward-box">本局获得 <b>◆ ${reward}</b> &nbsp;·&nbsp; <b class="shard-amt">✦ ${shardReward}</b></div>
       <div class="menu-btns">
         <button class="btn" id="btn-restart">↻ 再来一局</button>
-        <button class="btn btn-2" id="btn-hangar">✦ 机库</button>
+        <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
         <button class="btn btn-3" id="btn-menu">主菜单</button>
       </div>
