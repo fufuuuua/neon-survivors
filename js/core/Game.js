@@ -70,6 +70,7 @@ export class Game {
     this.boss = null;        // 当前存活的 Boss 引用（用于顶部血条）
     this.timeScale = 1;      // 时间缩放（慢动作演出）
     this.flash = 0;          // 全屏白闪强度 0..1
+    this.beams = [];         // 瞬时电弧光束（电弧链武器）
 
     // 元进度存档（跨局永久成长）
     this.save = SaveData.load();
@@ -151,10 +152,14 @@ export class Game {
     this.boss = null;
     this.timeScale = 1;
     this.flash = 0;
+    this.beams.length = 0;
     this.camera.update(this.player, 1); // 立即对齐
     this.screens.clear();
     this.state = GameState.PLAYING;
     this._showPauseBtn(true);
+
+    // 战术预载：开局立即领取额外强化选择
+    if (this.player.pendingLevels > 0) this.onLevelUp();
   }
 
   /** 显示主菜单 */
@@ -206,13 +211,15 @@ export class Game {
     UpgradeSystem.apply(u, this.player);
     this.particles.text(this.player.x, this.player.y - 40, u.name, u.accent, 20);
     this.screens.clear();
-    // 若升级期间又攒够经验，连续弹出
-    if (this.player.xp >= this.player.xpToNext) this.onLevelUp();
+    // 优先消耗“战术预载”额外次数，其次是常规经验溢出
+    if (this.player.pendingLevels > 0) { this.player.pendingLevels--; this.onLevelUp(); }
+    else if (this.player.xp >= this.player.xpToNext) this.onLevelUp();
     else { this.state = GameState.PLAYING; this._showPauseBtn(true); }
   }
 
-  onBossSpawn() {
-    this.particles.text(this.camera.x + this.viewW / 2, this.camera.y + 80, "⚠ 母核降临", "#ff2bd6", 30);
+  onBossSpawn(boss) {
+    const name = (boss && boss.def && boss.def.name) || "母核";
+    this.particles.text(this.camera.x + this.viewW / 2, this.camera.y + 80, `⚠ ${name}降临`, (boss && boss.color) || "#ff2bd6", 30);
     this.camera.shake(18);
   }
 
@@ -221,7 +228,7 @@ export class Game {
     const e = this._enemyPool.obtain();
     if (e) {
       e.spawn(type, x, y, hpScale);
-      if (type === "boss") this.boss = e; // 记录当前 Boss 供血条显示
+      if (e.isBoss) this.boss = e; // 记录当前 Boss 供血条显示
     }
     return e;
   }
@@ -242,11 +249,22 @@ export class Game {
     if (g) g.spawn(x, y, value, type);
   }
 
-  /** 对敌人造成伤害，处理击杀、掉落、特效 */
+  /** 记录一条瞬时电弧光束（电弧链武器用），由主循环衰减、render 绘制 */
+  addBeam(x1, y1, x2, y2, color, life = 0.16) {
+    this.beams.push({ x1, y1, x2, y2, color, life, maxLife: life });
+  }
+
+  /** 对敌人造成伤害，处理暴击、击杀、掉落、特效 */
   damageEnemy(enemy, amount, showText = true, hx = enemy.x, hy = enemy.y) {
+    let crit = false;
+    const p = this.player;
+    if (p.critChance > 0 && Math.random() < p.critChance) {
+      amount *= p.critMult;
+      crit = true;
+    }
     const dead = enemy.hurt(amount);
-    if (showText) this.particles.damageText(hx, hy, amount, amount > 40);
-    this.particles.burst(hx, hy, enemy.color, 4, 120, 2, 0.3);
+    if (showText) this.particles.damageText(hx, hy, amount, amount > 40 || crit);
+    this.particles.burst(hx, hy, crit ? "#ff8a3d" : enemy.color, crit ? 7 : 4, crit ? 180 : 120, 2, 0.3);
     if (dead) this._killEnemy(enemy);
     else this.audio.hit();
   }
@@ -254,6 +272,7 @@ export class Game {
   _killEnemy(enemy) {
     enemy.active = false;
     this.stats.kills++;
+    if (this.player.lifesteal > 0) this.player.heal(this.player.lifesteal);
 
     if (enemy.isBoss) { this._killBoss(enemy); return; }
 
@@ -291,13 +310,14 @@ export class Game {
     this.camera.shake(46);
     this.player.heal(this.player.maxHp * 0.3); // 击杀回血奖励
 
-    // 多波霓虹爆发
-    const colors = ["#ff2bd6", "#00f0ff", "#aaff00", "#ffd23f"];
+    // 多波霓虹爆发（以 Boss 本体色主导）
+    const colors = [boss.color, "#00f0ff", "#aaff00", "#ffd23f"];
     for (let w = 0; w < 4; w++) {
       const c = colors[w % colors.length];
       this.particles.burst(boss.x, boss.y, c, 36, 200 + w * 160, 5, 1.0 + w * 0.15);
     }
-    this.particles.text(boss.x, boss.y - 40, "母核净化", "#ff2bd6", 34);
+    const bossName = (boss.def && boss.def.name) || "母核";
+    this.particles.text(boss.x, boss.y - 40, `${bossName} 净化`, boss.color, 34);
     this.particles.text(boss.x, boss.y + 20, "+30% HP", "#aaff00", 20);
 
     // 丰厚掉落：环形散布的经验雨 + 必掉强力道具
@@ -321,6 +341,17 @@ export class Game {
     return best;
   }
 
+  /** 查找最近敌人，排除已命中集合并限制最大距离（电弧链跳跃用） */
+  findNearestEnemyExcept(x, y, exclude, maxRange) {
+    let best = null, bestD = maxRange * maxRange;
+    for (const e of this.enemies) {
+      if (!e.active || exclude.has(e)) continue;
+      const d = Vector2.distSq(e, { x, y });
+      if (d <= bestD) { bestD = d; best = e; }
+    }
+    return best;
+  }
+
   // ---------------- 主循环 ----------------
   loop(now) {
     const rawDt = Math.min(0.05, (now - this._lastTime) / 1000 || 0);
@@ -332,6 +363,12 @@ export class Game {
     // 演出量用真实时间衰减/回归，不受慢动作影响
     if (this.flash > 0) this.flash = Math.max(0, this.flash - rawDt * 2.4);
     if (this.timeScale < 1) this.timeScale = Math.min(1, this.timeScale + rawDt * 1.6);
+
+    // 电弧光束衰减（真实时间）
+    if (this.beams.length) {
+      for (const b of this.beams) b.life -= rawDt;
+      this.beams = this.beams.filter((b) => b.life > 0);
+    }
 
     this.render();
 
@@ -374,7 +411,27 @@ export class Game {
     this._ebPool.reclaim();
     this._gemPool.reclaim();
 
-    if (!this.player.alive) this._gameOver();
+    if (!this.player.alive) {
+      if (this.player.revives > 0) this._revive();
+      else this._gameOver();
+    }
+  }
+
+  /** 应急重构（局外强化）：阵亡后原地复活一次，清场并短暂无敌 */
+  _revive() {
+    this.player.revives--;
+    this.player.hp = this.player.maxHp;
+    this.player.invuln = 3;
+    this.screenFlash(0.9);
+    this.slowmo(0.35);
+    this.camera.shake(40);
+    // 净化屏内敌人与弹幕，给玩家喘息
+    for (const e of this.enemies) if (e.active && !e.isBoss) this.damageEnemy(e, 99999, false);
+    for (const b of this.enemyProjectiles) b.active = false;
+    const colors = ["#aaff00", "#00f0ff", "#ffd23f"];
+    for (let w = 0; w < 3; w++) this.particles.burst(this.player.x, this.player.y, colors[w], 40, 260 + w * 160, 5, 1.0);
+    this.particles.text(this.player.x, this.player.y - 40, "重构完成", "#aaff00", 30);
+    this.audio.bossKill();
   }
 
   _gameOver() {
@@ -428,6 +485,7 @@ export class Game {
     ctx.globalCompositeOperation = "lighter";
     for (const p of this.projectiles) p.render(ctx);
     for (const b of this.enemyProjectiles) b.render(ctx);
+    this._drawBeams(ctx);
     ctx.restore();
 
     if (this.state !== GameState.MENU) this.player.render(ctx);
@@ -448,6 +506,32 @@ export class Game {
       ctx.globalAlpha = Math.min(1, this.flash);
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, this.viewW, this.viewH);
+      ctx.restore();
+    }
+  }
+
+  /** 绘制电弧链光束：抖动折线 + 发光，短暂存在 */
+  _drawBeams(ctx) {
+    for (const b of this.beams) {
+      const a = Math.max(0, b.life / b.maxLife);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = b.color;
+      ctx.shadowBlur = 14; ctx.shadowColor = b.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(b.x1, b.y1);
+      // 沿路径加入几段随机抖动，模拟电弧
+      const segs = 5;
+      for (let i = 1; i < segs; i++) {
+        const t = i / segs;
+        const mx = b.x1 + (b.x2 - b.x1) * t;
+        const my = b.y1 + (b.y2 - b.y1) * t;
+        const j = 9 * a;
+        ctx.lineTo(mx + (Math.random() - 0.5) * j, my + (Math.random() - 0.5) * j);
+      }
+      ctx.lineTo(b.x2, b.y2);
+      ctx.stroke();
       ctx.restore();
     }
   }

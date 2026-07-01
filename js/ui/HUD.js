@@ -80,19 +80,21 @@ export class HUD {
     const y = 84;
     const h = 14;
     const ratio = Math.max(0, boss.hp / boss.maxHp);
+    const color = boss.color || "#ff2bd6";
+    const name = (boss.def && boss.def.name) || "母核";
 
     ctx.save();
     ctx.textAlign = "center";
     ctx.font = "700 13px 'JetBrains Mono', monospace";
-    ctx.fillStyle = "#ff2bd6";
-    ctx.shadowBlur = 8; ctx.shadowColor = "#ff2bd6";
-    ctx.fillText(`⚠ 母核  ${Math.ceil(boss.hp)} / ${boss.maxHp}`, W / 2, y - 8);
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 8; ctx.shadowColor = color;
+    ctx.fillText(`⚠ ${name}  ${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`, W / 2, y - 8);
     ctx.shadowBlur = 0;
 
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = "#ff2bd6";
-    ctx.shadowBlur = 12; ctx.shadowColor = "#ff2bd6";
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 12; ctx.shadowColor = color;
     ctx.fillRect(x, y, w * ratio, h);
     ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(255,255,255,0.35)";
@@ -123,6 +125,7 @@ export class HUD {
     if (w.orbit.count > 0) items.push({ w: w.orbit, badge: `×${w.orbit.count}` });
     if (w.aura.radius > 0) items.push({ w: w.aura, badge: "" });
     if (w.nova.cooldown > 0) items.push({ w: w.nova, badge: "" });
+    if (w.chain.chains > 0) items.push({ w: w.chain, badge: `×${w.chain.chains}` });
 
     let x = 26;
     const y = H - 52;

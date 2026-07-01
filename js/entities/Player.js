@@ -28,6 +28,16 @@ export class Player {
     this.damageMul = 1;       // 全局伤害倍率
     this.invuln = 0;
 
+    // 进阶属性（由局内/局外强化注入）
+    this.critChance = 0;      // 暴击率 0..1
+    this.critMult = 2;        // 暴击倍率
+    this.cooldownMul = 1;     // 武器冷却倍率（<1 更快）
+    this.damageReduction = 0; // 受伤减免 0..1
+    this.xpMul = 1;           // 经验获取倍率
+    this.lifesteal = 0;       // 每次击杀回复
+    this.revives = 0;         // 剩余复活次数
+    this.pendingLevels = 0;   // 开局待领取的额外强化次数
+
     // 等级 / 经验
     this.level = 1;
     this.xp = 0;
@@ -36,7 +46,7 @@ export class Player {
     // 武器实例数据（深拷贝配置，避免污染原始 CONFIG）
     this.weapons = JSON.parse(JSON.stringify(CONFIG.weapons));
     this.acquired = {};       // 升级项 id -> 已获取等级（用于 UI 展示与上限判断）
-    this._timers = { blaster: 0, nova: 0, aura: 0 };
+    this._timers = { blaster: 0, nova: 0, aura: 0, chain: 0 };
     this._orbitAngle = 0;
 
     this.moveDir = new Vector2();
@@ -47,7 +57,8 @@ export class Player {
 
   takeDamage(amount, game) {
     if (this.invuln > 0) return;
-    this.hp = clamp(this.hp - amount, 0, this.maxHp);
+    const real = amount * (1 - this.damageReduction);
+    this.hp = clamp(this.hp - real, 0, this.maxHp);
     this.invuln = CONFIG.player.invulnTime;
     game.audio.hurt();
     game.camera.shake(14);
@@ -57,7 +68,7 @@ export class Player {
   heal(amount) { this.hp = clamp(this.hp + amount, 0, this.maxHp); }
 
   gainXp(amount, game) {
-    this.xp += amount;
+    this.xp += amount * this.xpMul;
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level++;
@@ -91,6 +102,7 @@ export class Player {
     this._fireNova(dt, game);
     this._tickAura(dt, game);
     this._updateOrbit(dt, game);
+    this._fireChain(dt, game);
   }
 
   /** 主武器：自动瞄准最近敌人，可多发散射、可穿透 */
@@ -100,7 +112,7 @@ export class Player {
     if (this._timers.blaster > 0) return;
     const target = game.findNearestEnemy(this.x, this.y);
     if (!target) return;
-    this._timers.blaster = 1 / w.fireRate;
+    this._timers.blaster = (1 / w.fireRate) * this.cooldownMul;
 
     const base = Vector2.dir(this, target);
     const baseAngle = Math.atan2(base.y, base.x);
@@ -121,7 +133,7 @@ export class Player {
     if (w.cooldown <= 0) return; // 未解锁
     this._timers.nova -= dt;
     if (this._timers.nova > 0) return;
-    this._timers.nova = w.cooldown;
+    this._timers.nova = w.cooldown * this.cooldownMul;
     for (let i = 0; i < w.bullets; i++) {
       const a = (i / w.bullets) * TAU;
       game.spawnProjectile(this.x, this.y,
@@ -130,6 +142,29 @@ export class Player {
     }
     game.audio.nova();
     game.camera.shake(6);
+  }
+
+  /** 电弧链：周期性放出电弧，在最近的多个敌人之间跳跃造成伤害 */
+  _fireChain(dt, game) {
+    const w = this.weapons.chain;
+    if (w.cooldown <= 0 || w.chains <= 0) return; // 未解锁
+    this._timers.chain -= dt;
+    if (this._timers.chain > 0) return;
+    this._timers.chain = w.cooldown * this.cooldownMul;
+
+    let src = { x: this.x, y: this.y };
+    const hit = new Set();
+    let hops = 0;
+    for (let i = 0; i < w.chains; i++) {
+      const target = game.findNearestEnemyExcept(src.x, src.y, hit, w.range);
+      if (!target) break;
+      game.addBeam(src.x, src.y, target.x, target.y, w.accent, 0.16);
+      game.damageEnemy(target, w.damage * this.damageMul, true, target.x, target.y);
+      hit.add(target);
+      src = { x: target.x, y: target.y };
+      hops++;
+    }
+    if (hops > 0) game.audio.hit();
   }
 
   /** 灼蚀场：以玩家为中心的持续范围伤害（经空间网格查询近邻） */

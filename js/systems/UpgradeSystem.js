@@ -45,6 +45,12 @@ const UPGRADES = [
     available: (p) => p.weapons.nova.cooldown === 0,
     apply: (p) => { p.weapons.nova.cooldown = 4; },
   },
+  {
+    id: "unlock_chain", icon: "⚡", name: "电弧链", accent: "#7df9ff", maxLevel: 1, unlock: true,
+    desc: "每 1.4 秒放出电弧，在最近的 3 个敌人间跳跃。",
+    available: (p) => p.weapons.chain.cooldown === 0,
+    apply: (p) => { p.weapons.chain.cooldown = 1.4; p.weapons.chain.chains = 3; },
+  },
 
   // ---- 武器进阶 ----
   {
@@ -97,6 +103,18 @@ const UPGRADES = [
     available: (p) => p.weapons.nova.cooldown > 0,
     apply: (p) => { p.weapons.nova.damage *= 1.4; },
   },
+  {
+    id: "chain_more", icon: "⚡", name: "电弧增幅", accent: "#7df9ff", maxLevel: 5,
+    desc: "电弧链 +1 跳跃目标，冷却 -12%。",
+    available: (p) => p.weapons.chain.chains > 0,
+    apply: (p) => { p.weapons.chain.chains++; p.weapons.chain.cooldown *= 0.88; },
+  },
+  {
+    id: "chain_dmg", icon: "⚡", name: "过载电容", accent: "#7df9ff", maxLevel: 5,
+    desc: "电弧链伤害 +45%，跳跃距离 +30。",
+    available: (p) => p.weapons.chain.chains > 0,
+    apply: (p) => { p.weapons.chain.damage *= 1.45; p.weapons.chain.range += 30; },
+  },
 
   // ---- 被动属性 ----
   {
@@ -123,6 +141,21 @@ const UPGRADES = [
     id: "magnet", icon: "⬇", name: "引力线圈", accent: "#ffd23f", maxLevel: 4,
     desc: "经验拾取范围 +50%。",
     apply: (p) => { p.pickupRange *= 1.5; },
+  },
+  {
+    id: "crit_up", icon: "✧", name: "精准校准", accent: "#ff8a3d", maxLevel: 6,
+    desc: "暴击率 +8%（暴击造成 2 倍伤害）。",
+    apply: (p) => { p.critChance = Math.min(1, p.critChance + 0.08); },
+  },
+  {
+    id: "haste_up", icon: "⟳", name: "超频循环", accent: "#00f0ff", maxLevel: 5,
+    desc: "所有武器攻速 +8%。",
+    apply: (p) => { p.cooldownMul *= 0.92; },
+  },
+  {
+    id: "lifesteal", icon: "❤", name: "噬能装甲", accent: "#ff5c8a", maxLevel: 5,
+    desc: "每次击杀回复 +1.2 生命。",
+    apply: (p) => { p.lifesteal += 1.2; },
   },
 ];
 
@@ -191,6 +224,10 @@ export class UpgradeSystem {
       icon: w.nova.icon, name: w.nova.name, accent: w.nova.accent,
       detail: `每 ${r1(w.nova.cooldown)}s · ${w.nova.bullets} 发 · 伤害 ${r1(w.nova.damage)}`,
     });
+    if (w.chain.chains > 0) weapons.push({
+      icon: w.chain.icon, name: w.chain.name, accent: w.chain.accent,
+      detail: `每 ${r1(w.chain.cooldown)}s · ${w.chain.chains} 跳 · 伤害 ${r1(w.chain.damage)}`,
+    });
 
     const passives = [];
     const dmgPct = Math.round((player.damageMul - 1) * 100);
@@ -201,6 +238,12 @@ export class UpgradeSystem {
     if (player.regen > 0) passives.push({ icon: "✚", name: "回复", accent: "#aaff00", detail: `${r1(player.regen)}/s` });
     const magPct = Math.round((player.pickupRange / CONFIG_BASE.pickupRange - 1) * 100);
     if (magPct > 0) passives.push({ icon: "⬇", name: "拾取", accent: "#ffd23f", detail: `+${magPct}%` });
+    if (player.critChance > 0) passives.push({ icon: "✧", name: "暴击", accent: "#ff8a3d", detail: `${Math.round(player.critChance * 100)}%` });
+    const hastePct = Math.round((1 / player.cooldownMul - 1) * 100);
+    if (hastePct > 0) passives.push({ icon: "⟳", name: "攻速", accent: "#00f0ff", detail: `+${hastePct}%` });
+    if (player.damageReduction > 0) passives.push({ icon: "◈", name: "减伤", accent: "#5cffd2", detail: `${Math.round(player.damageReduction * 100)}%` });
+    if (player.lifesteal > 0) passives.push({ icon: "❤", name: "吸血", accent: "#ff5c8a", detail: `${r1(player.lifesteal)}/击杀` });
+    if (player.revives > 0) passives.push({ icon: "☯", name: "复活", accent: "#aaff00", detail: `×${player.revives}` });
 
     return { weapons, passives };
   }

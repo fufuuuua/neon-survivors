@@ -20,6 +20,7 @@ export class SpawnSystem {
     this.elapsed = 0;
     this.nextBoss = CONFIG.spawn.bossEvery;
     this.rampTimer = 0;
+    this.bossCount = 0;      // 已降临 Boss 数（决定变体与增强轮次）
   }
 
   /** 根据存活时长决定可生成的敌人种类与权重 */
@@ -47,8 +48,13 @@ export class SpawnSystem {
     // Boss 生成
     if (this.elapsed >= this.nextBoss) {
       this.nextBoss += CONFIG.spawn.bossEvery;
-      this._spawnAt("boss", this.hpScale);
-      this.game.onBossSpawn();
+      const order = CONFIG.bossOrder;
+      const type = order[this.bossCount % order.length];
+      const cycle = Math.floor(this.bossCount / order.length); // 每轮完整轮换后进一步增强
+      const bossScale = this.hpScale * (1 + cycle * 0.6);
+      const boss = this._spawnAt(type, bossScale);
+      this.bossCount++;
+      this.game.onBossSpawn(boss);
     }
 
     // 常规生成
@@ -75,7 +81,7 @@ export class SpawnSystem {
     let y = cy + Math.sin(angle) * dist;
     x = Math.max(20, Math.min(CONFIG.world.width - 20, x));
     y = Math.max(20, Math.min(CONFIG.world.height - 20, y));
-    this.game.spawnEnemy(type, x, y, hpScale);
+    return this.game.spawnEnemy(type, x, y, hpScale);
   }
 
   /** 裂解体死亡时分裂出小型追逐者 */

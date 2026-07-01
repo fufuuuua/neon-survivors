@@ -504,6 +504,15 @@ const CONFIG = Object.freeze({
       bullets: 12,
       projectileSpeed: 380,
     },
+    chain: {             // 电弧链：周期性电弧，在最近敌人间跳跃
+      name: "电弧链",
+      icon: "⚡",
+      accent: "#7df9ff",
+      damage: 16,
+      cooldown: 0,         // 0 = 未解锁
+      chains: 0,           // 跳跃目标数
+      range: 230,          // 单次跳跃最大距离
+    },
   },
 
   enemies: {
@@ -511,8 +520,14 @@ const CONFIG = Object.freeze({
     rusher:  { name: "突袭体", hp: 18,  speed: 165, radius: 11, damage: 10, xp: 2,  color: "#ffd23f" },
     tank:    { name: "壁垒",   hp: 130, speed: 46,  radius: 24, damage: 16, xp: 4,  color: "#5cffd2" },
     splitter:{ name: "裂解体", hp: 50,  speed: 70,  radius: 18, damage: 9,  xp: 3,  color: "#b06bff" },
-    boss:    { name: "母核",   hp: 2200,speed: 40,  radius: 52, damage: 28, xp: 60, color: "#ff2bd6" },
+    // ---- Boss 三阶段变体：造型 / 攻击模式 / 节奏各异，轮换降临，每轮血量递增 ----
+    boss_nucleus: { name: "母核",   hp: 1800, speed: 38, radius: 50, damage: 26, xp: 55,  color: "#ff2bd6", boss: true, kind: 0 },
+    boss_flux:    { name: "裂能体", hp: 2500, speed: 56, radius: 44, damage: 30, xp: 78,  color: "#00f0ff", boss: true, kind: 1 },
+    boss_void:    { name: "湮灭者", hp: 3800, speed: 30, radius: 60, damage: 36, xp: 110, color: "#ffd23f", boss: true, kind: 2 },
   },
+
+  // Boss 轮换顺序（对应上面的三种变体）
+  bossOrder: ["boss_nucleus", "boss_flux", "boss_void"],
 
   spawn: {
     interval: 1.15,      // 初始生成间隔（秒）
@@ -782,6 +797,7 @@ class Game {
     this.boss = null;        // 当前存活的 Boss 引用（用于顶部血条）
     this.timeScale = 1;      // 时间缩放（慢动作演出）
     this.flash = 0;          // 全屏白闪强度 0..1
+    this.beams = [];         // 瞬时电弧光束（电弧链武器）
 
     // 元进度存档（跨局永久成长）
     this.save = SaveData.load();
@@ -863,10 +879,14 @@ class Game {
     this.boss = null;
     this.timeScale = 1;
     this.flash = 0;
+    this.beams.length = 0;
     this.camera.update(this.player, 1); // 立即对齐
     this.screens.clear();
     this.state = GameState.PLAYING;
     this._showPauseBtn(true);
+
+    // 战术预载：开局立即领取额外强化选择
+    if (this.player.pendingLevels > 0) this.onLevelUp();
   }
 
   /** 显示主菜单 */
@@ -918,13 +938,15 @@ class Game {
     UpgradeSystem.apply(u, this.player);
     this.particles.text(this.player.x, this.player.y - 40, u.name, u.accent, 20);
     this.screens.clear();
-    // 若升级期间又攒够经验，连续弹出
-    if (this.player.xp >= this.player.xpToNext) this.onLevelUp();
+    // 优先消耗“战术预载”额外次数，其次是常规经验溢出
+    if (this.player.pendingLevels > 0) { this.player.pendingLevels--; this.onLevelUp(); }
+    else if (this.player.xp >= this.player.xpToNext) this.onLevelUp();
     else { this.state = GameState.PLAYING; this._showPauseBtn(true); }
   }
 
-  onBossSpawn() {
-    this.particles.text(this.camera.x + this.viewW / 2, this.camera.y + 80, "⚠ 母核降临", "#ff2bd6", 30);
+  onBossSpawn(boss) {
+    const name = (boss && boss.def && boss.def.name) || "母核";
+    this.particles.text(this.camera.x + this.viewW / 2, this.camera.y + 80, `⚠ ${name}降临`, (boss && boss.color) || "#ff2bd6", 30);
     this.camera.shake(18);
   }
 
@@ -933,7 +955,7 @@ class Game {
     const e = this._enemyPool.obtain();
     if (e) {
       e.spawn(type, x, y, hpScale);
-      if (type === "boss") this.boss = e; // 记录当前 Boss 供血条显示
+      if (e.isBoss) this.boss = e; // 记录当前 Boss 供血条显示
     }
     return e;
   }
@@ -954,11 +976,22 @@ class Game {
     if (g) g.spawn(x, y, value, type);
   }
 
-  /** 对敌人造成伤害，处理击杀、掉落、特效 */
+  /** 记录一条瞬时电弧光束（电弧链武器用），由主循环衰减、render 绘制 */
+  addBeam(x1, y1, x2, y2, color, life = 0.16) {
+    this.beams.push({ x1, y1, x2, y2, color, life, maxLife: life });
+  }
+
+  /** 对敌人造成伤害，处理暴击、击杀、掉落、特效 */
   damageEnemy(enemy, amount, showText = true, hx = enemy.x, hy = enemy.y) {
+    let crit = false;
+    const p = this.player;
+    if (p.critChance > 0 && Math.random() < p.critChance) {
+      amount *= p.critMult;
+      crit = true;
+    }
     const dead = enemy.hurt(amount);
-    if (showText) this.particles.damageText(hx, hy, amount, amount > 40);
-    this.particles.burst(hx, hy, enemy.color, 4, 120, 2, 0.3);
+    if (showText) this.particles.damageText(hx, hy, amount, amount > 40 || crit);
+    this.particles.burst(hx, hy, crit ? "#ff8a3d" : enemy.color, crit ? 7 : 4, crit ? 180 : 120, 2, 0.3);
     if (dead) this._killEnemy(enemy);
     else this.audio.hit();
   }
@@ -966,6 +999,7 @@ class Game {
   _killEnemy(enemy) {
     enemy.active = false;
     this.stats.kills++;
+    if (this.player.lifesteal > 0) this.player.heal(this.player.lifesteal);
 
     if (enemy.isBoss) { this._killBoss(enemy); return; }
 
@@ -1003,13 +1037,14 @@ class Game {
     this.camera.shake(46);
     this.player.heal(this.player.maxHp * 0.3); // 击杀回血奖励
 
-    // 多波霓虹爆发
-    const colors = ["#ff2bd6", "#00f0ff", "#aaff00", "#ffd23f"];
+    // 多波霓虹爆发（以 Boss 本体色主导）
+    const colors = [boss.color, "#00f0ff", "#aaff00", "#ffd23f"];
     for (let w = 0; w < 4; w++) {
       const c = colors[w % colors.length];
       this.particles.burst(boss.x, boss.y, c, 36, 200 + w * 160, 5, 1.0 + w * 0.15);
     }
-    this.particles.text(boss.x, boss.y - 40, "母核净化", "#ff2bd6", 34);
+    const bossName = (boss.def && boss.def.name) || "母核";
+    this.particles.text(boss.x, boss.y - 40, `${bossName} 净化`, boss.color, 34);
     this.particles.text(boss.x, boss.y + 20, "+30% HP", "#aaff00", 20);
 
     // 丰厚掉落：环形散布的经验雨 + 必掉强力道具
@@ -1033,6 +1068,17 @@ class Game {
     return best;
   }
 
+  /** 查找最近敌人，排除已命中集合并限制最大距离（电弧链跳跃用） */
+  findNearestEnemyExcept(x, y, exclude, maxRange) {
+    let best = null, bestD = maxRange * maxRange;
+    for (const e of this.enemies) {
+      if (!e.active || exclude.has(e)) continue;
+      const d = Vector2.distSq(e, { x, y });
+      if (d <= bestD) { bestD = d; best = e; }
+    }
+    return best;
+  }
+
   // ---------------- 主循环 ----------------
   loop(now) {
     const rawDt = Math.min(0.05, (now - this._lastTime) / 1000 || 0);
@@ -1044,6 +1090,12 @@ class Game {
     // 演出量用真实时间衰减/回归，不受慢动作影响
     if (this.flash > 0) this.flash = Math.max(0, this.flash - rawDt * 2.4);
     if (this.timeScale < 1) this.timeScale = Math.min(1, this.timeScale + rawDt * 1.6);
+
+    // 电弧光束衰减（真实时间）
+    if (this.beams.length) {
+      for (const b of this.beams) b.life -= rawDt;
+      this.beams = this.beams.filter((b) => b.life > 0);
+    }
 
     this.render();
 
@@ -1086,7 +1138,27 @@ class Game {
     this._ebPool.reclaim();
     this._gemPool.reclaim();
 
-    if (!this.player.alive) this._gameOver();
+    if (!this.player.alive) {
+      if (this.player.revives > 0) this._revive();
+      else this._gameOver();
+    }
+  }
+
+  /** 应急重构（局外强化）：阵亡后原地复活一次，清场并短暂无敌 */
+  _revive() {
+    this.player.revives--;
+    this.player.hp = this.player.maxHp;
+    this.player.invuln = 3;
+    this.screenFlash(0.9);
+    this.slowmo(0.35);
+    this.camera.shake(40);
+    // 净化屏内敌人与弹幕，给玩家喘息
+    for (const e of this.enemies) if (e.active && !e.isBoss) this.damageEnemy(e, 99999, false);
+    for (const b of this.enemyProjectiles) b.active = false;
+    const colors = ["#aaff00", "#00f0ff", "#ffd23f"];
+    for (let w = 0; w < 3; w++) this.particles.burst(this.player.x, this.player.y, colors[w], 40, 260 + w * 160, 5, 1.0);
+    this.particles.text(this.player.x, this.player.y - 40, "重构完成", "#aaff00", 30);
+    this.audio.bossKill();
   }
 
   _gameOver() {
@@ -1140,6 +1212,7 @@ class Game {
     ctx.globalCompositeOperation = "lighter";
     for (const p of this.projectiles) p.render(ctx);
     for (const b of this.enemyProjectiles) b.render(ctx);
+    this._drawBeams(ctx);
     ctx.restore();
 
     if (this.state !== GameState.MENU) this.player.render(ctx);
@@ -1160,6 +1233,32 @@ class Game {
       ctx.globalAlpha = Math.min(1, this.flash);
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, this.viewW, this.viewH);
+      ctx.restore();
+    }
+  }
+
+  /** 绘制电弧链光束：抖动折线 + 发光，短暂存在 */
+  _drawBeams(ctx) {
+    for (const b of this.beams) {
+      const a = Math.max(0, b.life / b.maxLife);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = b.color;
+      ctx.shadowBlur = 14; ctx.shadowColor = b.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(b.x1, b.y1);
+      // 沿路径加入几段随机抖动，模拟电弧
+      const segs = 5;
+      for (let i = 1; i < segs; i++) {
+        const t = i / segs;
+        const mx = b.x1 + (b.x2 - b.x1) * t;
+        const my = b.y1 + (b.y2 - b.y1) * t;
+        const j = 9 * a;
+        ctx.lineTo(mx + (Math.random() - 0.5) * j, my + (Math.random() - 0.5) * j);
+      }
+      ctx.lineTo(b.x2, b.y2);
+      ctx.stroke();
       ctx.restore();
     }
   }
@@ -1688,11 +1787,23 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/entities/Enemy.js"] = function (e
 /**
  * Enemy.js — 敌人实体，支持多种行为类型（追逐 / 突袭 / 坦克 / 裂解 / Boss）。
  * 行为差异通过配置数据驱动，渲染采用各异的霓虹几何造型。
+ *
+ * Boss 分三种阶段化变体（kind 0/1/2），各自拥有不同造型、攻击套路与节奏：
+ *   0 母核   —— 稳健：环形弹幕 / 扇形散射 / 召唤突袭体
+ *   1 裂能体 —— 敏捷：双臂螺旋 / 突进扇射 / 高速环爆
+ *   2 湮灭者 —— 沉重：双层环波 / 宽域横扫 / 召唤壁垒
  */
 const {CONFIG} = require("/Users/fiona/Desktop/neon-survivors/js/config.js");
 const {Vector2} = require("/Users/fiona/Desktop/neon-survivors/js/utils/Vector2.js");
 const {TAU} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.js");
 const {drawGlow} = require("/Users/fiona/Desktop/neon-survivors/js/core/GlowCache.js");
+
+// 各 Boss 变体的攻击节奏与蓄力时长
+const BOSS_TUNE = [
+  { interval: 3.2, cast: 0.55, bullet: 14 }, // 母核
+  { interval: 2.1, cast: 0.40, bullet: 16 }, // 裂能体（更急促）
+  { interval: 4.0, cast: 0.85, bullet: 20 }, // 湮灭者（更沉重）
+];
 
 class Enemy {
   constructor() { this.active = false; }
@@ -1702,23 +1813,29 @@ class Enemy {
     this.type = type;
     this.def = def;
     this.x = x; this.y = y;
-    this.maxHp = def.hp * hpScale;
+    this.maxHp = Math.round(def.hp * hpScale); // 取整：避免血条出现 .99999 之类的浮点尾数
     this.hp = this.maxHp;
     this.speed = def.speed;
     this.radius = def.radius;
     this.damage = def.damage;
     this.color = def.color;
     this.xp = def.xp;
-    this.isBoss = type === "boss";
+    this.isBoss = def.boss === true;
+    this.kind = def.kind || 0;
     this.flash = 0;             // 命中闪白计时
     this._orbitCd = 0;          // 轨道核命中冷却（对象池复用时重置）
     this.t = Math.random() * TAU;
     // Boss 攻击状态
     if (this.isBoss) {
-      this._atkTimer = 3.5;     // 首次攻击前的缓冲
+      const tune = BOSS_TUNE[this.kind];
+      this._interval = tune.interval;
+      this._castTime = tune.cast;
+      this._atkTimer = 3.2;     // 首次攻击前的缓冲
       this._casting = 0;        // 施法预警剩余时间
       this._atkIndex = 0;       // 攻击模式轮换序号
       this._pendingAtk = 0;
+      this._dashTime = 0;       // 突进剩余时间（裂能体）
+      this._dashX = 0; this._dashY = 0;
     }
     this.active = true;
   }
@@ -1738,12 +1855,18 @@ class Enemy {
     if (this.isBoss && game) {
       this._bossAI(dt, player, game);
       if (this._casting > 0) speedMul = 0.12;
+      if (this._dashTime > 0) { this._dashTime -= dt; speedMul = 3.4; } // 突进冲刺
     }
     this._move(dt, player, speedMul);
   }
 
-  /** 朝玩家移动（突袭体带摆动） */
+  /** 朝玩家移动（突袭体带摆动；Boss 突进期间沿锁定方向冲刺） */
   _move(dt, player, speedMul) {
+    if (this.isBoss && this._dashTime > 0) {
+      this.x += this._dashX * this.speed * speedMul * dt;
+      this.y += this._dashY * this.speed * speedMul * dt;
+      return;
+    }
     const dir = Vector2.dir(this, player);
     const sp = this.speed * speedMul;
     if (this.type === "rusher") {
@@ -1766,18 +1889,28 @@ class Enemy {
     }
     this._atkTimer -= dt;
     if (this._atkTimer <= 0) {
-      this._atkTimer = 3.2;
-      this._casting = 0.55;                 // 蓄力预警时间
+      this._atkTimer = this._interval;
+      this._casting = this._castTime;         // 蓄力预警时间
       this._pendingAtk = (this._atkIndex++) % 3;
       if (game.audio.bossAttack) game.audio.bossAttack();
     }
   }
 
   _fireBossAttack(player, game) {
-    const dmg = 14;
-    const color = "#ff8a3d";                // 醒目的警示橙
+    const dmg = BOSS_TUNE[this.kind].bullet;
+    const color = this.color;                 // 用本体颜色，强化 Boss 辨识度
     const opt = (extra) => ({ damage: dmg, pierce: 0, radius: 7, color, life: 6, ...extra });
+    const aimAngle = () => Math.atan2(player.y - this.y, player.x - this.x);
 
+    if (this.kind === 0) this._attackNucleus(player, game, opt, aimAngle);
+    else if (this.kind === 1) this._attackFlux(player, game, opt, aimAngle);
+    else this._attackVoid(player, game, opt, aimAngle);
+
+    game.camera.shake(this.kind === 2 ? 12 : 8);
+  }
+
+  // ---- 母核：环形 / 扇形 / 召唤突袭体 ----
+  _attackNucleus(player, game, opt, aimAngle) {
     switch (this._pendingAtk) {
       case 0: { // 环形弹幕
         const n = 20, sp = 185;
@@ -1788,7 +1921,7 @@ class Enemy {
         break;
       }
       case 1: { // 朝玩家的扇形散射
-        const a0 = Math.atan2(player.y - this.y, player.x - this.x);
+        const a0 = aimAngle();
         const n = 7, spread = 0.85, sp = 250;
         for (let i = 0; i < n; i++) {
           const a = a0 + (i - (n - 1) / 2) * (spread / (n - 1));
@@ -1805,7 +1938,80 @@ class Enemy {
         break;
       }
     }
-    game.camera.shake(8);
+  }
+
+  // ---- 裂能体：双臂螺旋 / 突进扇射 / 高速环爆 ----
+  _attackFlux(player, game, opt, aimAngle) {
+    switch (this._pendingAtk) {
+      case 0: { // 双臂反向螺旋
+        const arms = 2, per = 12, sp = 215;
+        for (let a = 0; a < arms; a++) {
+          for (let i = 0; i < per; i++) {
+            const ang = this.t * 2.2 + a * Math.PI + i * 0.16;
+            game.spawnEnemyProjectile(this.x, this.y, Math.cos(ang) * sp, Math.sin(ang) * sp, opt({ radius: 6 }));
+          }
+        }
+        break;
+      }
+      case 1: { // 突进 + 紧密扇射
+        const a0 = aimAngle();
+        this._dashX = Math.cos(a0); this._dashY = Math.sin(a0);
+        this._dashTime = 0.5;             // 触发一次冲刺
+        const n = 5, spread = 0.5, sp = 340;
+        for (let i = 0; i < n; i++) {
+          const a = a0 + (i - (n - 1) / 2) * (spread / (n - 1));
+          game.spawnEnemyProjectile(this.x, this.y, Math.cos(a) * sp, Math.sin(a) * sp, opt({ radius: 7 }));
+        }
+        break;
+      }
+      case 2: { // 高速环爆
+        const n = 28, sp = 250;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * TAU + this.t * 0.5;
+          game.spawnEnemyProjectile(this.x, this.y, Math.cos(a) * sp, Math.sin(a) * sp, opt({ radius: 6 }));
+        }
+        break;
+      }
+    }
+  }
+
+  // ---- 湮灭者：双层环波 / 宽域横扫 / 召唤壁垒 ----
+  _attackVoid(player, game, opt, aimAngle) {
+    switch (this._pendingAtk) {
+      case 0: { // 双层同心环波（内快外慢，制造节奏差）
+        const n = 16;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * TAU + this.t;
+          game.spawnEnemyProjectile(this.x, this.y, Math.cos(a) * 160, Math.sin(a) * 160, opt({ radius: 9 }));
+        }
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * TAU + this.t + Math.PI / n;
+          game.spawnEnemyProjectile(this.x, this.y, Math.cos(a) * 95, Math.sin(a) * 95, opt({ radius: 11 }));
+        }
+        break;
+      }
+      case 1: { // 宽域横扫：一大片朝玩家覆盖的重弹
+        const a0 = aimAngle();
+        const n = 14, spread = 1.8, sp = 175;
+        for (let i = 0; i < n; i++) {
+          const a = a0 + (i - (n - 1) / 2) * (spread / (n - 1));
+          game.spawnEnemyProjectile(this.x, this.y, Math.cos(a) * sp, Math.sin(a) * sp, opt({ radius: 10 }));
+        }
+        break;
+      }
+      case 2: { // 召唤壁垒 + 裂解体
+        const hp = game.spawnSystem.hpScale * 0.7;
+        for (let i = 0; i < 2; i++) {
+          const a = (i / 2) * TAU;
+          game.spawnEnemy("tank", this.x + Math.cos(a) * 70, this.y + Math.sin(a) * 70, hp);
+        }
+        for (let i = 0; i < 2; i++) {
+          const a = (i / 2) * TAU + Math.PI / 2;
+          game.spawnEnemy("splitter", this.x + Math.cos(a) * 70, this.y + Math.sin(a) * 70, hp);
+        }
+        break;
+      }
+    }
   }
 
   render(ctx) {
@@ -1814,7 +2020,7 @@ class Enemy {
 
     // Boss 蓄力预警：扩张的警示环
     if (this.isBoss && this._casting > 0) {
-      const p = 1 - this._casting / 0.55;
+      const p = 1 - this._casting / this._castTime;
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.4 * Math.abs(Math.sin(this._casting * 22));
       ctx.strokeStyle = "#ff8a3d";
@@ -1827,18 +2033,22 @@ class Enemy {
 
     ctx.save();
     ctx.translate(this.x, this.y);
-    ctx.rotate(this.t * (this.isBoss ? 0.3 : 0.8));
+    const spin = this.isBoss ? [0.3, 0.9, 0.18][this.kind] : 0.8;
+    ctx.rotate(this.t * spin);
     const c = this.flash > 0 ? "#ffffff" : this.color;
     ctx.strokeStyle = c;
     ctx.fillStyle = c;
     ctx.lineWidth = 2.5;
 
-    switch (this.type) {
-      case "chaser":   this._poly(ctx, 3, this.radius); break; // 三角
-      case "rusher":   this._poly(ctx, 4, this.radius); break; // 菱形/方
-      case "tank":     this._poly(ctx, 6, this.radius); break; // 六边形
-      case "splitter": this._poly(ctx, 5, this.radius); break; // 五边
-      case "boss":     this._boss(ctx); break;
+    if (this.isBoss) {
+      this._boss(ctx);
+    } else {
+      switch (this.type) {
+        case "chaser":   this._poly(ctx, 3, this.radius); break; // 三角
+        case "rusher":   this._poly(ctx, 4, this.radius); break; // 菱形/方
+        case "tank":     this._poly(ctx, 6, this.radius); break; // 六边形
+        case "splitter": this._poly(ctx, 5, this.radius); break; // 五边
+      }
     }
     ctx.restore();
 
@@ -1858,14 +2068,47 @@ class Enemy {
     ctx.globalAlpha = 1; ctx.stroke();
   }
 
-  _boss(ctx) {
-    this._poly(ctx, 8, this.radius);
-    ctx.rotate(this.t);
-    this._poly(ctx, 3, this.radius * 0.55);
+  /** 星形（用于裂能体的尖锐造型） */
+  _star(ctx, points, rOuter, rInner) {
     ctx.beginPath();
-    ctx.arc(0, 0, this.radius * 0.25, 0, TAU);
-    ctx.fillStyle = "#fff";
-    ctx.fill();
+    for (let i = 0; i <= points * 2; i++) {
+      const r = i % 2 === 0 ? rOuter : rInner;
+      const a = (i / (points * 2)) * TAU - Math.PI / 2;
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.globalAlpha = 0.28; ctx.fill();
+    ctx.globalAlpha = 1; ctx.stroke();
+  }
+
+  /** Boss 造型：按 kind 区分，各具辨识度 */
+  _boss(ctx) {
+    const r = this.radius;
+    if (this.kind === 0) {
+      // 母核：八边形 + 旋转三角 + 亮核
+      this._poly(ctx, 8, r);
+      ctx.rotate(this.t);
+      this._poly(ctx, 3, r * 0.55);
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.25, 0, TAU);
+      ctx.fillStyle = "#fff"; ctx.fill();
+    } else if (this.kind === 1) {
+      // 裂能体：六角尖星 + 反向内星，锐利敏捷感
+      this._star(ctx, 6, r, r * 0.5);
+      ctx.rotate(-this.t * 1.6);
+      this._star(ctx, 3, r * 0.6, r * 0.28);
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.18, 0, TAU);
+      ctx.fillStyle = "#fff"; ctx.fill();
+    } else {
+      // 湮灭者：厚重双层六边形 + 环状裂纹核，沉重感
+      this._poly(ctx, 6, r);
+      this._poly(ctx, 6, r * 0.72);
+      ctx.rotate(this.t * 0.6);
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.4, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.2, 0, TAU);
+      ctx.fillStyle = "#fff"; ctx.fill();
+    }
   }
 
   _healthBar(ctx) {
@@ -1876,7 +2119,7 @@ class Enemy {
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = this.isBoss ? "#ff2bd6" : "#aaff00";
+    ctx.fillStyle = this.isBoss ? this.color : "#aaff00";
     ctx.fillRect(x, y, w * Math.max(0, this.hp / this.maxHp), h);
     ctx.restore();
   }
@@ -1916,6 +2159,16 @@ class Player {
     this.damageMul = 1;       // 全局伤害倍率
     this.invuln = 0;
 
+    // 进阶属性（由局内/局外强化注入）
+    this.critChance = 0;      // 暴击率 0..1
+    this.critMult = 2;        // 暴击倍率
+    this.cooldownMul = 1;     // 武器冷却倍率（<1 更快）
+    this.damageReduction = 0; // 受伤减免 0..1
+    this.xpMul = 1;           // 经验获取倍率
+    this.lifesteal = 0;       // 每次击杀回复
+    this.revives = 0;         // 剩余复活次数
+    this.pendingLevels = 0;   // 开局待领取的额外强化次数
+
     // 等级 / 经验
     this.level = 1;
     this.xp = 0;
@@ -1924,7 +2177,7 @@ class Player {
     // 武器实例数据（深拷贝配置，避免污染原始 CONFIG）
     this.weapons = JSON.parse(JSON.stringify(CONFIG.weapons));
     this.acquired = {};       // 升级项 id -> 已获取等级（用于 UI 展示与上限判断）
-    this._timers = { blaster: 0, nova: 0, aura: 0 };
+    this._timers = { blaster: 0, nova: 0, aura: 0, chain: 0 };
     this._orbitAngle = 0;
 
     this.moveDir = new Vector2();
@@ -1935,7 +2188,8 @@ class Player {
 
   takeDamage(amount, game) {
     if (this.invuln > 0) return;
-    this.hp = clamp(this.hp - amount, 0, this.maxHp);
+    const real = amount * (1 - this.damageReduction);
+    this.hp = clamp(this.hp - real, 0, this.maxHp);
     this.invuln = CONFIG.player.invulnTime;
     game.audio.hurt();
     game.camera.shake(14);
@@ -1945,7 +2199,7 @@ class Player {
   heal(amount) { this.hp = clamp(this.hp + amount, 0, this.maxHp); }
 
   gainXp(amount, game) {
-    this.xp += amount;
+    this.xp += amount * this.xpMul;
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level++;
@@ -1979,6 +2233,7 @@ class Player {
     this._fireNova(dt, game);
     this._tickAura(dt, game);
     this._updateOrbit(dt, game);
+    this._fireChain(dt, game);
   }
 
   /** 主武器：自动瞄准最近敌人，可多发散射、可穿透 */
@@ -1988,7 +2243,7 @@ class Player {
     if (this._timers.blaster > 0) return;
     const target = game.findNearestEnemy(this.x, this.y);
     if (!target) return;
-    this._timers.blaster = 1 / w.fireRate;
+    this._timers.blaster = (1 / w.fireRate) * this.cooldownMul;
 
     const base = Vector2.dir(this, target);
     const baseAngle = Math.atan2(base.y, base.x);
@@ -2009,7 +2264,7 @@ class Player {
     if (w.cooldown <= 0) return; // 未解锁
     this._timers.nova -= dt;
     if (this._timers.nova > 0) return;
-    this._timers.nova = w.cooldown;
+    this._timers.nova = w.cooldown * this.cooldownMul;
     for (let i = 0; i < w.bullets; i++) {
       const a = (i / w.bullets) * TAU;
       game.spawnProjectile(this.x, this.y,
@@ -2018,6 +2273,29 @@ class Player {
     }
     game.audio.nova();
     game.camera.shake(6);
+  }
+
+  /** 电弧链：周期性放出电弧，在最近的多个敌人之间跳跃造成伤害 */
+  _fireChain(dt, game) {
+    const w = this.weapons.chain;
+    if (w.cooldown <= 0 || w.chains <= 0) return; // 未解锁
+    this._timers.chain -= dt;
+    if (this._timers.chain > 0) return;
+    this._timers.chain = w.cooldown * this.cooldownMul;
+
+    let src = { x: this.x, y: this.y };
+    const hit = new Set();
+    let hops = 0;
+    for (let i = 0; i < w.chains; i++) {
+      const target = game.findNearestEnemyExcept(src.x, src.y, hit, w.range);
+      if (!target) break;
+      game.addBeam(src.x, src.y, target.x, target.y, w.accent, 0.16);
+      game.damageEnemy(target, w.damage * this.damageMul, true, target.x, target.y);
+      hit.add(target);
+      src = { x: target.x, y: target.y };
+      hops++;
+    }
+    if (hops > 0) game.audio.hit();
   }
 
   /** 灼蚀场：以玩家为中心的持续范围伤害（经空间网格查询近邻） */
@@ -2291,8 +2569,8 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/systems/CollisionSystem.js"] = fu
 const {Vector2} = require("/Users/fiona/Desktop/neon-survivors/js/utils/Vector2.js");
 const {DropType} = require("/Users/fiona/Desktop/neon-survivors/js/entities/XPGem.js");
 
-// 网格查询时额外扩展的半径，需覆盖最大敌人半径（Boss=52）
-const MAX_ENEMY_RADIUS = 56;
+// 网格查询时额外扩展的半径，需覆盖最大敌人半径（湮灭者 Boss=60）
+const MAX_ENEMY_RADIUS = 64;
 
 class CollisionSystem {
   constructor(game) {
@@ -2401,42 +2679,73 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/systems/MetaProgression.js"] = fu
  * 玩家每局结束依据表现获得「暗物质核心 ◆」，可在强化实验室购买**跨局永久加成**。
  * 这使得每局不再孤立：失败也在变强，形成“再来一局”的长期驱动。
  *
- * 设计：
- *  - 永久升级有等级上限与递增花费曲线。
- *  - applyTo() 在开局把已购加成注入玩家初始属性。
- *  - reward() 计算本局结算获得的核心数量（受“贪婪”项加成）。
+ * 平衡设计（本次重构）：
+ *  - 项目更多、等级更高、花费曲线更陡：全部买满需数千核心，远超单局产出，
+ *    因此**不可能一局就买满全部加点**，长期养成有充足空间。
+ *  - reward() 采用更克制的系数，单局收益占总目标很小的比例，鼓励反复挑战。
+ *  - applyTo() 在开局把已购加成注入玩家初始属性 / 能力。
  */
 
 const META = [
   {
-    id: "hp", icon: "♥", name: "强化装甲", accent: "#ff5c8a", max: 5,
-    baseCost: 6, costGrow: 1.7,
-    effect: "起始最大生命 +20 / 级",
+    id: "hp", icon: "♥", name: "强化装甲", accent: "#ff5c8a", max: 8,
+    baseCost: 10, costGrow: 1.55,
+    effect: "起始最大生命 +18 / 级",
   },
   {
-    id: "dmg", icon: "⚡", name: "武器校准", accent: "#ffd23f", max: 5,
-    baseCost: 8, costGrow: 1.8,
-    effect: "全武器伤害 +8% / 级",
+    id: "dmg", icon: "⚡", name: "武器校准", accent: "#ffd23f", max: 8,
+    baseCost: 14, costGrow: 1.55,
+    effect: "全武器伤害 +7% / 级",
   },
   {
-    id: "spd", icon: "➤", name: "引擎调校", accent: "#00f0ff", max: 4,
-    baseCost: 6, costGrow: 1.7,
-    effect: "移动速度 +5% / 级",
+    id: "spd", icon: "➤", name: "引擎调校", accent: "#00f0ff", max: 6,
+    baseCost: 10, costGrow: 1.5,
+    effect: "移动速度 +4% / 级",
   },
   {
-    id: "regen", icon: "✚", name: "纳米基质", accent: "#aaff00", max: 4,
-    baseCost: 10, costGrow: 1.8,
-    effect: "每秒回复 +0.5 / 级",
+    id: "regen", icon: "✚", name: "纳米基质", accent: "#aaff00", max: 6,
+    baseCost: 12, costGrow: 1.5,
+    effect: "每秒回复 +0.4 / 级",
   },
   {
-    id: "magnet", icon: "⬇", name: "引力核心", accent: "#8a5bff", max: 4,
-    baseCost: 5, costGrow: 1.6,
-    effect: "经验拾取范围 +18% / 级",
+    id: "magnet", icon: "⬇", name: "引力核心", accent: "#8a5bff", max: 5,
+    baseCost: 8, costGrow: 1.5,
+    effect: "经验拾取范围 +15% / 级",
   },
   {
-    id: "greed", icon: "◆", name: "贪婪协议", accent: "#ff2bd6", max: 5,
-    baseCost: 12, costGrow: 1.9,
-    effect: "局末获得核心 +12% / 级",
+    id: "crit", icon: "✧", name: "暴击矩阵", accent: "#ff8a3d", max: 6,
+    baseCost: 15, costGrow: 1.55,
+    effect: "暴击率 +5% / 级（暴击造成 2 倍伤害）",
+  },
+  {
+    id: "haste", icon: "⟳", name: "时序压缩", accent: "#00f0ff", max: 5,
+    baseCost: 16, costGrow: 1.6,
+    effect: "武器攻速 +4% / 级",
+  },
+  {
+    id: "armor", icon: "◈", name: "相位护盾", accent: "#5cffd2", max: 5,
+    baseCost: 18, costGrow: 1.6,
+    effect: "受到伤害 -6% / 级",
+  },
+  {
+    id: "xp", icon: "◇", name: "学习协议", accent: "#8a5bff", max: 5,
+    baseCost: 14, costGrow: 1.5,
+    effect: "经验获取 +8% / 级",
+  },
+  {
+    id: "preload", icon: "★", name: "战术预载", accent: "#ffd23f", max: 3,
+    baseCost: 30, costGrow: 1.9,
+    effect: "开局额外获得 1 次强化选择 / 级",
+  },
+  {
+    id: "revive", icon: "☯", name: "应急重构", accent: "#aaff00", max: 2,
+    baseCost: 60, costGrow: 2.2,
+    effect: "每局阵亡后原地复活一次 / 级",
+  },
+  {
+    id: "greed", icon: "◆", name: "贪婪协议", accent: "#ff2bd6", max: 6,
+    baseCost: 20, costGrow: 1.6,
+    effect: "局末获得核心 +10% / 级",
   },
 ];
 
@@ -2472,19 +2781,28 @@ class MetaProgression {
   /** 开局把永久加成注入玩家（在 player.reset() 之后调用） */
   static applyTo(player, save) {
     const L = (id) => MetaProgression.levelOf(save, id);
-    player.maxHp += 20 * L("hp");
+    player.maxHp += 18 * L("hp");
     player.hp = player.maxHp;
-    player.damageMul *= 1 + 0.08 * L("dmg");
-    player.speed *= 1 + 0.05 * L("spd");
-    player.regen += 0.5 * L("regen");
-    player.pickupRange *= 1 + 0.18 * L("magnet");
+    player.damageMul *= 1 + 0.07 * L("dmg");
+    player.speed *= 1 + 0.04 * L("spd");
+    player.regen += 0.4 * L("regen");
+    player.pickupRange *= 1 + 0.15 * L("magnet");
+    player.critChance += 0.05 * L("crit");
+    player.cooldownMul *= Math.pow(0.96, L("haste"));   // 攻速：冷却缩短
+    player.damageReduction = Math.min(0.7, player.damageReduction + 0.06 * L("armor"));
+    player.xpMul *= 1 + 0.08 * L("xp");
+    player.pendingLevels += L("preload");
+    player.revives += L("revive");
   }
 
-  /** 计算本局结算获得的核心数（击杀 + 时长 + Boss 加权，再乘贪婪加成） */
+  /**
+   * 计算本局结算获得的核心数（击杀 + 时长 + Boss 加权，再乘贪婪加成）。
+   * 系数刻意克制：单局产出仅占“全部买满”目标的很小比例，长期养成才可满级。
+   */
   static reward(save, stats) {
-    const base = stats.kills * 1 + Math.floor(stats.time / 5) + (stats.bossKills || 0) * 25;
-    const mult = 1 + 0.12 * MetaProgression.levelOf(save, "greed");
-    return Math.floor(base * mult);
+    const base = stats.kills * 0.5 + Math.floor(stats.time / 8) + (stats.bossKills || 0) * 12;
+    const mult = 1 + 0.1 * MetaProgression.levelOf(save, "greed");
+    return Math.max(1, Math.floor(base * mult));
   }
 }
 
@@ -2514,6 +2832,7 @@ class SpawnSystem {
     this.elapsed = 0;
     this.nextBoss = CONFIG.spawn.bossEvery;
     this.rampTimer = 0;
+    this.bossCount = 0;      // 已降临 Boss 数（决定变体与增强轮次）
   }
 
   /** 根据存活时长决定可生成的敌人种类与权重 */
@@ -2541,8 +2860,13 @@ class SpawnSystem {
     // Boss 生成
     if (this.elapsed >= this.nextBoss) {
       this.nextBoss += CONFIG.spawn.bossEvery;
-      this._spawnAt("boss", this.hpScale);
-      this.game.onBossSpawn();
+      const order = CONFIG.bossOrder;
+      const type = order[this.bossCount % order.length];
+      const cycle = Math.floor(this.bossCount / order.length); // 每轮完整轮换后进一步增强
+      const bossScale = this.hpScale * (1 + cycle * 0.6);
+      const boss = this._spawnAt(type, bossScale);
+      this.bossCount++;
+      this.game.onBossSpawn(boss);
     }
 
     // 常规生成
@@ -2569,7 +2893,7 @@ class SpawnSystem {
     let y = cy + Math.sin(angle) * dist;
     x = Math.max(20, Math.min(CONFIG.world.width - 20, x));
     y = Math.max(20, Math.min(CONFIG.world.height - 20, y));
-    this.game.spawnEnemy(type, x, y, hpScale);
+    return this.game.spawnEnemy(type, x, y, hpScale);
   }
 
   /** 裂解体死亡时分裂出小型追逐者 */
@@ -2633,6 +2957,12 @@ const UPGRADES = [
     available: (p) => p.weapons.nova.cooldown === 0,
     apply: (p) => { p.weapons.nova.cooldown = 4; },
   },
+  {
+    id: "unlock_chain", icon: "⚡", name: "电弧链", accent: "#7df9ff", maxLevel: 1, unlock: true,
+    desc: "每 1.4 秒放出电弧，在最近的 3 个敌人间跳跃。",
+    available: (p) => p.weapons.chain.cooldown === 0,
+    apply: (p) => { p.weapons.chain.cooldown = 1.4; p.weapons.chain.chains = 3; },
+  },
 
   // ---- 武器进阶 ----
   {
@@ -2685,6 +3015,18 @@ const UPGRADES = [
     available: (p) => p.weapons.nova.cooldown > 0,
     apply: (p) => { p.weapons.nova.damage *= 1.4; },
   },
+  {
+    id: "chain_more", icon: "⚡", name: "电弧增幅", accent: "#7df9ff", maxLevel: 5,
+    desc: "电弧链 +1 跳跃目标，冷却 -12%。",
+    available: (p) => p.weapons.chain.chains > 0,
+    apply: (p) => { p.weapons.chain.chains++; p.weapons.chain.cooldown *= 0.88; },
+  },
+  {
+    id: "chain_dmg", icon: "⚡", name: "过载电容", accent: "#7df9ff", maxLevel: 5,
+    desc: "电弧链伤害 +45%，跳跃距离 +30。",
+    available: (p) => p.weapons.chain.chains > 0,
+    apply: (p) => { p.weapons.chain.damage *= 1.45; p.weapons.chain.range += 30; },
+  },
 
   // ---- 被动属性 ----
   {
@@ -2711,6 +3053,21 @@ const UPGRADES = [
     id: "magnet", icon: "⬇", name: "引力线圈", accent: "#ffd23f", maxLevel: 4,
     desc: "经验拾取范围 +50%。",
     apply: (p) => { p.pickupRange *= 1.5; },
+  },
+  {
+    id: "crit_up", icon: "✧", name: "精准校准", accent: "#ff8a3d", maxLevel: 6,
+    desc: "暴击率 +8%（暴击造成 2 倍伤害）。",
+    apply: (p) => { p.critChance = Math.min(1, p.critChance + 0.08); },
+  },
+  {
+    id: "haste_up", icon: "⟳", name: "超频循环", accent: "#00f0ff", maxLevel: 5,
+    desc: "所有武器攻速 +8%。",
+    apply: (p) => { p.cooldownMul *= 0.92; },
+  },
+  {
+    id: "lifesteal", icon: "❤", name: "噬能装甲", accent: "#ff5c8a", maxLevel: 5,
+    desc: "每次击杀回复 +1.2 生命。",
+    apply: (p) => { p.lifesteal += 1.2; },
   },
 ];
 
@@ -2779,6 +3136,10 @@ class UpgradeSystem {
       icon: w.nova.icon, name: w.nova.name, accent: w.nova.accent,
       detail: `每 ${r1(w.nova.cooldown)}s · ${w.nova.bullets} 发 · 伤害 ${r1(w.nova.damage)}`,
     });
+    if (w.chain.chains > 0) weapons.push({
+      icon: w.chain.icon, name: w.chain.name, accent: w.chain.accent,
+      detail: `每 ${r1(w.chain.cooldown)}s · ${w.chain.chains} 跳 · 伤害 ${r1(w.chain.damage)}`,
+    });
 
     const passives = [];
     const dmgPct = Math.round((player.damageMul - 1) * 100);
@@ -2789,6 +3150,12 @@ class UpgradeSystem {
     if (player.regen > 0) passives.push({ icon: "✚", name: "回复", accent: "#aaff00", detail: `${r1(player.regen)}/s` });
     const magPct = Math.round((player.pickupRange / CONFIG_BASE.pickupRange - 1) * 100);
     if (magPct > 0) passives.push({ icon: "⬇", name: "拾取", accent: "#ffd23f", detail: `+${magPct}%` });
+    if (player.critChance > 0) passives.push({ icon: "✧", name: "暴击", accent: "#ff8a3d", detail: `${Math.round(player.critChance * 100)}%` });
+    const hastePct = Math.round((1 / player.cooldownMul - 1) * 100);
+    if (hastePct > 0) passives.push({ icon: "⟳", name: "攻速", accent: "#00f0ff", detail: `+${hastePct}%` });
+    if (player.damageReduction > 0) passives.push({ icon: "◈", name: "减伤", accent: "#5cffd2", detail: `${Math.round(player.damageReduction * 100)}%` });
+    if (player.lifesteal > 0) passives.push({ icon: "❤", name: "吸血", accent: "#ff5c8a", detail: `${r1(player.lifesteal)}/击杀` });
+    if (player.revives > 0) passives.push({ icon: "☯", name: "复活", accent: "#aaff00", detail: `×${player.revives}` });
 
     return { weapons, passives };
   }
@@ -2880,19 +3247,21 @@ class HUD {
     const y = 84;
     const h = 14;
     const ratio = Math.max(0, boss.hp / boss.maxHp);
+    const color = boss.color || "#ff2bd6";
+    const name = (boss.def && boss.def.name) || "母核";
 
     ctx.save();
     ctx.textAlign = "center";
     ctx.font = "700 13px 'JetBrains Mono', monospace";
-    ctx.fillStyle = "#ff2bd6";
-    ctx.shadowBlur = 8; ctx.shadowColor = "#ff2bd6";
-    ctx.fillText(`⚠ 母核  ${Math.ceil(boss.hp)} / ${boss.maxHp}`, W / 2, y - 8);
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 8; ctx.shadowColor = color;
+    ctx.fillText(`⚠ ${name}  ${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`, W / 2, y - 8);
     ctx.shadowBlur = 0;
 
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = "#ff2bd6";
-    ctx.shadowBlur = 12; ctx.shadowColor = "#ff2bd6";
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 12; ctx.shadowColor = color;
     ctx.fillRect(x, y, w * ratio, h);
     ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(255,255,255,0.35)";
@@ -2923,6 +3292,7 @@ class HUD {
     if (w.orbit.count > 0) items.push({ w: w.orbit, badge: `×${w.orbit.count}` });
     if (w.aura.radius > 0) items.push({ w: w.aura, badge: "" });
     if (w.nova.cooldown > 0) items.push({ w: w.nova, badge: "" });
+    if (w.chain.chains > 0) items.push({ w: w.chain, badge: `×${w.chain.chains}` });
 
     let x = 26;
     const y = H - 52;

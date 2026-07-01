@@ -7,8 +7,8 @@
 import { Vector2 } from "../utils/Vector2.js";
 import { DropType } from "../entities/XPGem.js";
 
-// 网格查询时额外扩展的半径，需覆盖最大敌人半径（Boss=52）
-const MAX_ENEMY_RADIUS = 56;
+// 网格查询时额外扩展的半径，需覆盖最大敌人半径（湮灭者 Boss=60）
+const MAX_ENEMY_RADIUS = 64;
 
 export class CollisionSystem {
   constructor(game) {

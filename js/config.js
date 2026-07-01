@@ -56,6 +56,15 @@ export const CONFIG = Object.freeze({
       bullets: 12,
       projectileSpeed: 380,
     },
+    chain: {             // 电弧链：周期性电弧，在最近敌人间跳跃
+      name: "电弧链",
+      icon: "⚡",
+      accent: "#7df9ff",
+      damage: 16,
+      cooldown: 0,         // 0 = 未解锁
+      chains: 0,           // 跳跃目标数
+      range: 230,          // 单次跳跃最大距离
+    },
   },
 
   enemies: {
@@ -63,8 +72,14 @@ export const CONFIG = Object.freeze({
     rusher:  { name: "突袭体", hp: 18,  speed: 165, radius: 11, damage: 10, xp: 2,  color: "#ffd23f" },
     tank:    { name: "壁垒",   hp: 130, speed: 46,  radius: 24, damage: 16, xp: 4,  color: "#5cffd2" },
     splitter:{ name: "裂解体", hp: 50,  speed: 70,  radius: 18, damage: 9,  xp: 3,  color: "#b06bff" },
-    boss:    { name: "母核",   hp: 2200,speed: 40,  radius: 52, damage: 28, xp: 60, color: "#ff2bd6" },
+    // ---- Boss 三阶段变体：造型 / 攻击模式 / 节奏各异，轮换降临，每轮血量递增 ----
+    boss_nucleus: { name: "母核",   hp: 1800, speed: 38, radius: 50, damage: 26, xp: 55,  color: "#ff2bd6", boss: true, kind: 0 },
+    boss_flux:    { name: "裂能体", hp: 2500, speed: 56, radius: 44, damage: 30, xp: 78,  color: "#00f0ff", boss: true, kind: 1 },
+    boss_void:    { name: "湮灭者", hp: 3800, speed: 30, radius: 60, damage: 36, xp: 110, color: "#ffd23f", boss: true, kind: 2 },
   },
+
+  // Boss 轮换顺序（对应上面的三种变体）
+  bossOrder: ["boss_nucleus", "boss_flux", "boss_void"],
 
   spawn: {
     interval: 1.15,      // 初始生成间隔（秒）
