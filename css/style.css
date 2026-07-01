@@ -518,6 +518,11 @@ html, body {
     justify-content: center;
     padding: 24px 12px;
   }
+  /* 暂停界面：移动端垂直居中 */
+  .screen.pause-screen {
+    justify-content: center;
+    padding: 24px 12px;
+  }
   .screen h1 { font-size: clamp(34px, 12vw, 58px); }
   .screen h2 { font-size: clamp(20px, 6vw, 30px); }
 

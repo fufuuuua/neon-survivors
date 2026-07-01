@@ -71,7 +71,7 @@ export class Screens {
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
       </div>
       <div class="hint">${this.isTouch
-        ? "拖动屏幕移动 &nbsp;·&nbsp; 点击 ⏸ 暂停 &nbsp;·&nbsp; 武器自动开火"
+        ? "拖动屏幕移动 &nbsp;·&nbsp; 点击右上角按钮暂停<br>武器自动开火"
         : "移动: W A S D / 方向键 &nbsp;·&nbsp; 暂停: P / ESC &nbsp;·&nbsp; 武器自动开火"}</div>
     `, "menu-screen");
     this.root.appendChild(el);
@@ -173,8 +173,10 @@ export class Screens {
         <button class="btn" id="btn-resume">继续</button>
         <button class="btn btn-quit" id="btn-quit">✕ 结束本局</button>
       </div>
-      <div class="hint">按 P / ESC 继续 &nbsp;·&nbsp; 主动结束本局不会有奖励结算</div>
-    `);
+      <div class="hint">${this.isTouch
+        ? "主动结束本局不会有奖励结算"
+        : "按 P / ESC 继续 &nbsp;·&nbsp; 主动结束本局不会有奖励结算"}</div>
+    `, "pause-screen");
     this.root.appendChild(el);
     el.querySelector("#btn-resume").addEventListener("click", onResume);
     if (onQuit) el.querySelector("#btn-quit").addEventListener("click", onQuit);

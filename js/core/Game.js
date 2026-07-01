@@ -93,7 +93,11 @@ export class Game {
   _createPauseButton() {
     const btn = document.createElement("button");
     btn.className = "pause-fab";
-    btn.textContent = "⏸";
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">' +
+      '<rect x="6" y="5" width="4" height="14" rx="1.5" fill="currentColor"></rect>' +
+      '<rect x="14" y="5" width="4" height="14" rx="1.5" fill="currentColor"></rect>' +
+      "</svg>";
     btn.setAttribute("aria-label", "暂停");
     btn.addEventListener("click", () => {
       if (this.state === GameState.PLAYING) this._pause();

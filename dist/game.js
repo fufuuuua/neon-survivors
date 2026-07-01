@@ -393,7 +393,11 @@ class Game {
   _createPauseButton() {
     const btn = document.createElement("button");
     btn.className = "pause-fab";
-    btn.textContent = "⏸";
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">' +
+      '<rect x="6" y="5" width="4" height="14" rx="1.5" fill="currentColor"></rect>' +
+      '<rect x="14" y="5" width="4" height="14" rx="1.5" fill="currentColor"></rect>' +
+      "</svg>";
     btn.setAttribute("aria-label", "暂停");
     btn.addEventListener("click", () => {
       if (this.state === GameState.PLAYING) this._pause();
@@ -3717,7 +3721,7 @@ class Screens {
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
       </div>
       <div class="hint">${this.isTouch
-        ? "拖动屏幕移动 &nbsp;·&nbsp; 点击 ⏸ 暂停 &nbsp;·&nbsp; 武器自动开火"
+        ? "拖动屏幕移动 &nbsp;·&nbsp; 点击右上角按钮暂停<br>武器自动开火"
         : "移动: W A S D / 方向键 &nbsp;·&nbsp; 暂停: P / ESC &nbsp;·&nbsp; 武器自动开火"}</div>
     `, "menu-screen");
     this.root.appendChild(el);
@@ -3819,8 +3823,10 @@ class Screens {
         <button class="btn" id="btn-resume">继续</button>
         <button class="btn btn-quit" id="btn-quit">✕ 结束本局</button>
       </div>
-      <div class="hint">按 P / ESC 继续 &nbsp;·&nbsp; 主动结束本局不会有奖励结算</div>
-    `);
+      <div class="hint">${this.isTouch
+        ? "主动结束本局不会有奖励结算"
+        : "按 P / ESC 继续 &nbsp;·&nbsp; 主动结束本局不会有奖励结算"}</div>
+    `, "pause-screen");
     this.root.appendChild(el);
     el.querySelector("#btn-resume").addEventListener("click", onResume);
     if (onQuit) el.querySelector("#btn-quit").addEventListener("click", onQuit);
