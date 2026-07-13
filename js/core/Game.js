@@ -451,12 +451,14 @@ export class Game {
     this.state = GameState.SHOP;
     this._showPauseBtn(false);
     this.screens.showShop(this.save, {
+      // 购买只改数据 + 落盘, 不重建整页; 界面刷新由 showShop 内部局部完成, 避免闪动
       onBuy: (id) => {
-        if (MetaProgression.buy(this.save, id)) {
+        const ok = MetaProgression.buy(this.save, id);
+        if (ok) {
           SaveData.save(this.user.id, this.save);
           this.audio.pickup();
         }
-        this._openShop(); // 刷新界面
+        return ok;
       },
       onBack: () => this._showMenu(),
     });

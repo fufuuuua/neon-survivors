@@ -56,9 +56,6 @@ export class Screens {
   showMenu(save, user, { onStart, onResume, onShop, onHangar, onCodex, onAccount }) {
     this.clear();
     const b = save.best;
-    const resumeBtn = onResume
-      ? `<button class="btn" id="btn-resume">↩ 继续上局</button>`
-      : "";
     const userBar = user
       ? `
       <div class="user-bar" id="user-bar" title="点击切换或管理玩家">
@@ -67,6 +64,20 @@ export class Screens {
         <span class="user-switch">切换 ▸</span>
       </div>`
       : "";
+    // 主行按钮:
+    //  - 有续玩快照: [继续上局] + [重新开始], 两颗并列
+    //  - 无续玩快照: 单独一颗 [开始游戏]
+    // 次要行(第二排): 机库 / 强化实验室 / 图鉴
+    // 颜色语义:
+    //  · 开始游戏 -> 品红 (btn-primary, 与游戏主强调色一致)
+    //  · 重新开始 -> 青 (btn-restart, 与"继续上局"区分, 视觉降级)
+    //  · 继续上局 -> 品红 (与开始游戏同级, 都是主行动)
+    const primaryRow = onResume
+      ? `
+        <button class="btn btn-primary" id="btn-resume">↩ 继续上局</button>
+        <button class="btn btn-restart" id="btn-start">▶ 重新开始</button>
+      `
+      : `<button class="btn btn-primary" id="btn-start">▶ 开始游戏</button>`;
     const el = this._make(`
       ${userBar}
       <div class="sub">ROGUELITE · SURVIVOR · 霓虹幸存者</div>
@@ -82,11 +93,10 @@ export class Screens {
         <span>最高等级 <b>${b.level}</b></span>
         <span>击败母核 <b>${b.bossKills}</b></span>
       </div>
-      <div class="menu-btns">
-        ${resumeBtn}
-        <button class="btn ${onResume ? "btn-2" : ""}" id="btn-start">▶ ${onResume ? "重新开始" : "开始游戏"}</button>
-        <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
+      <div class="menu-btns menu-primary">${primaryRow}</div>
+      <div class="menu-btns menu-secondary">
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
+        <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
         <button class="btn btn-codex" id="btn-codex">▤ 图鉴</button>
       </div>
       <div class="hint">${this.isTouch
@@ -111,34 +121,63 @@ export class Screens {
     const el = this._make(`
       <div class="sub">META LAB · 强化实验室</div>
       <h2 class="neon-title">永久强化</h2>
-      <div class="cores-balance"><span class="cur-core">◆ ${save.cores}</span> <span class="lbl">可用核心</span></div>
+      <div class="cores-balance"><span class="cur-core">◆ <span class="cur-core-amt">${save.cores}</span></span> <span class="lbl">可用核心</span></div>
       <div class="shop-list"></div>
       <button class="btn" id="btn-back">← 返回</button>
       <div class="hint">永久加成在每局开局自动生效 · 失败也在变强</div>
-    `);
+    `, "shop-screen");
     const list = el.querySelector(".shop-list");
-    for (const m of MetaProgression.list()) {
+    const coreAmtEl = el.querySelector(".cur-core-amt");
+
+    // 按钮态刷新：等级 / 花费 / 是否可购. 用于购买后仅更新受影响 DOM, 避免整页重绘闪动.
+    const refreshRow = (row, m) => {
       const lv = MetaProgression.levelOf(save, m.id);
       const cost = MetaProgression.costOf(save, m.id);
       const maxed = cost == null;
       const affordable = !maxed && save.cores >= cost;
+      // 等级文本
+      const lvEl = row.querySelector(".shop-lv");
+      if (lvEl) lvEl.textContent = `Lv.${lv}/${m.max}`;
+      // 进度点
+      const pipsEl = row.querySelector(".pips");
+      if (pipsEl) pipsEl.innerHTML = this._pips(lv, m.max, m.accent);
+      // 购买按钮: 只改 class/文本/disabled, 不换 DOM 节点 (监听器保留)
+      const btn = row.querySelector(".shop-buy");
+      if (btn) {
+        btn.classList.toggle("maxed", maxed);
+        btn.classList.toggle("poor", !maxed && !affordable);
+        btn.disabled = maxed || !affordable;
+        btn.textContent = maxed ? "满级" : `◆ ${cost}`;
+      }
+    };
+    const refreshAll = () => {
+      if (coreAmtEl) coreAmtEl.textContent = String(save.cores);
+      for (const row of list.querySelectorAll(".shop-row")) {
+        const id = row.dataset.metaId;
+        const m = MetaProgression.list().find((x) => x.id === id);
+        if (m) refreshRow(row, m);
+      }
+    };
+
+    for (const m of MetaProgression.list()) {
       const row = document.createElement("div");
       row.className = "shop-row";
+      row.dataset.metaId = m.id;
       row.style.setProperty("--accent", m.accent);
       row.innerHTML = `
         <div class="shop-icon">${m.icon}</div>
         <div class="shop-info">
-          <div class="shop-name">${m.name} <span class="shop-lv">Lv.${lv}/${m.max}</span></div>
+          <div class="shop-name">${m.name} <span class="shop-lv"></span></div>
           <div class="shop-effect">${m.effect}</div>
-          <div class="pips">${this._pips(lv, m.max, m.accent)}</div>
+          <div class="pips"></div>
         </div>
-        <button class="shop-buy ${maxed ? "maxed" : affordable ? "" : "poor"}" ${maxed || !affordable ? "disabled" : ""}>
-          ${maxed ? "满级" : `◆ ${cost}`}
-        </button>
+        <button class="shop-buy" type="button"></button>
       `;
-      if (!maxed && affordable) {
-        row.querySelector(".shop-buy").addEventListener("click", () => onBuy(m.id));
-      }
+      // 一次性绑定按钮点击, 内部检查是否可购; 购买后局部刷新, 不重建整页.
+      row.querySelector(".shop-buy").addEventListener("click", () => {
+        if (onBuy(m.id)) refreshAll();
+      });
+      refreshRow(row, m);
       list.appendChild(row);
     }
     this.root.appendChild(el);
@@ -217,7 +256,7 @@ export class Screens {
       <div class="stat-line">击杀总数 <b>${stats.kills}</b>${tag(records.kills)}</div>
       <div class="stat-line">到达等级 <b>${stats.level}</b>${tag(records.level)}</div>
       <div class="stat-line">击败母核 <b>${stats.bossKills}</b>${tag(records.bossKills)}</div>
-      <div class="reward-box">本局获得 <b>◆ ${reward}</b> &nbsp;·&nbsp; <b class="shard-amt">✦ ${shardReward}</b></div>
+      <div class="reward-box">本局获得 <b class="cur-core">◆ ${reward}</b> &nbsp;·&nbsp; <b class="shard-amt">✦ ${shardReward}</b></div>
       <div class="menu-btns">
         <button class="btn" id="btn-restart">↻ 再来一局</button>
         <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
@@ -382,6 +421,10 @@ export class Screens {
         <div class="cp-text">收集进度 <b>${prog.owned}</b> / ${prog.total}</div>
       </div>
       <div class="codex-body"></div>
+      <div class="codex-achv-title">
+        <span class="cat-tag">ACHIEVEMENTS</span>
+        <span class="cat-cn">成就 · 收集里程碑</span>
+      </div>
       <div class="codex-milestones"></div>
       <button class="btn btn-3" id="btn-back">← 返回</button>
       <div class="hint">局内首次遭遇即录入图鉴 · 未发掘条目以黑色轮廓显示 · 达成里程碑可领取奖励</div>
@@ -406,9 +449,11 @@ export class Screens {
         const cell = document.createElement("div");
         cell.className = `codex-cell${owned ? " owned" : " locked"}`;
         cell.style.setProperty("--accent", entry.color);
+        // 已发掘: 主题色符号 + 名称 + 描述; 未发掘: 黑色轮廓问号 + ??? 占位
         cell.innerHTML = `
           <div class="cc-sym">${owned ? entry.symbol : "?"}</div>
           <div class="cc-name">${owned ? entry.name : "???"}</div>
+          <div class="cc-desc">${owned ? (entry.desc || "") : "尚未发掘"}</div>
         `;
         grid.appendChild(cell);
       }

@@ -13,39 +13,70 @@
  */
 import { CONFIG } from "../config.js";
 
-// ---------------- 条目定义 ----------------
-// 条目从 CONFIG 里派生, 保持单一数据源；额外补充图鉴专属的图标 / 描述。
+// ---------------- 图鉴专属的图标 / 描述表 ----------------
+// 与 CONFIG 保持单一数据源: 名字/主题色从 CONFIG 派生; 符号/描述图鉴单独维护, 便于文案调整.
+// 图标选取原则: 1) 主流字体都能渲染的 Unicode 几何符号, 避免"豆腐"; 2) 全局唯一, 不重复.
+
+const ENEMY_META = {
+  chaser:   { symbol: "▲", desc: "直线追击的三角杂兵\n成群出现" },
+  rusher:   { symbol: "◆", desc: "菱形高速冲刺\n侧向摆动难预判" },
+  tank:     { symbol: "⬣", desc: "厚重六边形\n血厚速慢" },
+  splitter: { symbol: "⬟", desc: "阵亡后分裂为两个小裂片" },
+};
+
+const BOSS_META = {
+  boss_nucleus: { symbol: "❖", desc: "稳健型: 环形弹幕 / 扇形散射 / 召唤增援" },
+  boss_flux:    { symbol: "✷", desc: "敏捷型: 双臂螺旋 + 突进扇射\n节奏急促" },
+  boss_void:    { symbol: "⬢", desc: "沉重型: 双层环波 + 宽域横扫\n召唤精英" },
+};
+
+const WEAPON_META = {
+  blaster: { symbol: "➤", desc: "开局主武器\n自动瞄准最近敌人" },
+  orbit:   { symbol: "◉", desc: "环绕光球\n碰触造成伤害" },
+  aura:    { symbol: "❂", desc: "身周持续范围灼烧" },
+  nova:    { symbol: "✸", desc: "周期性环形弹幕清场" },
+  chain:   { symbol: "⚡", desc: "电弧在最近多个敌人间跳跃" },
+};
+
+// 道具符号刻意与武器区分: 医疗 / 磁吸 / 湮灭. 湮灭改用星芒符号, 避免和超新星撞图标.
+const ITEM_META = [
+  { id: "HEAL",   name: "医疗补给", color: "#aaff00", symbol: "✚", desc: "拾取即回 25 生命" },
+  { id: "MAGNET", name: "引力磁吸", color: "#ffd23f", symbol: "⇩", desc: "吸附全场经验晶体" },
+  { id: "BOMB",   name: "湮灭炸弹", color: "#ff2bd6", symbol: "☀", desc: "对周围敌人毁灭打击\nBoss 重伤" },
+];
+
+// ---------------- 条目列表（从 CONFIG 派生 + 图鉴表补充） ----------------
 const _enemyList = () => Object.entries(CONFIG.enemies)
   .filter(([, def]) => !def.boss)
-  .map(([id, def]) => ({ id, name: def.name, color: def.color, symbol: symbolOfEnemy(id) }));
+  .map(([id, def]) => ({
+    id, name: def.name, color: def.color,
+    symbol: (ENEMY_META[id] && ENEMY_META[id].symbol) || "▲",
+    desc:   (ENEMY_META[id] && ENEMY_META[id].desc)   || "",
+  }));
 
 const _bossList = () => Object.entries(CONFIG.enemies)
   .filter(([, def]) => def.boss)
-  .map(([id, def]) => ({ id, name: def.name, color: def.color, symbol: symbolOfBoss(def.kind || 0) }));
+  .map(([id, def]) => ({
+    id, name: def.name, color: def.color,
+    symbol: (BOSS_META[id] && BOSS_META[id].symbol) || "◆",
+    desc:   (BOSS_META[id] && BOSS_META[id].desc)   || "",
+  }));
 
 const _weaponList = () => Object.entries(CONFIG.weapons)
-  .map(([id, def]) => ({ id, name: def.name, color: def.accent, symbol: def.icon }));
+  .map(([id, def]) => ({
+    id, name: def.name, color: def.accent,
+    symbol: (WEAPON_META[id] && WEAPON_META[id].symbol) || def.icon,
+    desc:   (WEAPON_META[id] && WEAPON_META[id].desc)   || "",
+  }));
 
-const ITEMS = [
-  { id: "HEAL",   name: "医疗补给", color: "#aaff00", symbol: "+" },
-  { id: "MAGNET", name: "引力磁吸", color: "#ffd23f", symbol: "⬇" },
-  { id: "BOMB",   name: "湮灭炸弹", color: "#ff2bd6", symbol: "✸" },
-];
-
-/** 敌人图鉴符号（多边形边数暗示造型）：三角/菱/六边/五角 */
-function symbolOfEnemy(id) {
-  return { chaser: "△", rusher: "◆", tank: "⬡", splitter: "⬠" }[id] || "△";
-}
-function symbolOfBoss(kind) {
-  return ["⯃", "✦", "⬢"][kind] || "⯃";
-}
+const _itemList = () => ITEM_META.map((it) => ({ ...it }));
 
 /** 分类元信息（顺序即界面展示顺序） */
 export const CATEGORIES = [
   { key: "enemies", title: "敌 · 常见战斗单元", list: _enemyList },
   { key: "bosses",  title: "Boss · 阶段化威胁", list: _bossList },
   { key: "weapons", title: "武器 · 舰载火力",   list: _weaponList },
-  { key: "items",   title: "道具 · 战场拾取",   list: () => ITEMS },
+  { key: "items",   title: "道具 · 战场拾取",   list: _itemList },
 ];
 
 /**

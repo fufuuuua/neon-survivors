@@ -160,9 +160,11 @@ html, body {
   animation: fadeIn 0.35s ease;
   touch-action: manipulation;    /* 界面层禁用双击缩放，保留点击与滚动 */
 }
-/* 机库屏幕关闭 backdrop-filter: 装备切换时任何子节点变化都会让浏览器重算整块背板模糊,
-   在深色主题下视觉上表现为"整屏闪一下". 机库背景本身已是深色渐变, 关掉模糊不影响观感. */
-.screen.hangar-screen { backdrop-filter: none; }
+/* 图鉴屏幕关闭 backdrop-filter: 装备切换时任何子节点变化都会让浏览器重算整块背板模糊,
+   在深色主题下视觉上表现为"整屏闪一下". 机库/强化实验室背景本身已是深色渐变, 关掉模糊不影响观感. */
+.screen.hangar-screen,
+.screen.shop-screen,
+.screen.codex-screen { backdrop-filter: none; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -307,8 +309,8 @@ html, body {
 }
 /* 单个货币单元：数值 + 标签基线对齐 */
 .cores-balance .cur { display: inline-flex; align-items: baseline; gap: 6px; }
-/* 暗物质核心：品红高亮 */
-.cores-balance .cur-core { color: var(--neon-magenta); text-shadow: 0 0 12px var(--neon-magenta); }
+/* 暗物质核心：紫色高亮, 与强化实验室按钮 (btn-3) 保持视觉一致, 呼应"花核心买强化"的语义 */
+.cores-balance .cur-core { color: var(--neon-violet); text-shadow: 0 0 12px var(--neon-violet); }
 /* 两种货币之间的分隔符 */
 .cores-balance .cur-sep { color: #52627e; font-weight: 400; font-size: 18px; }
 /* 货币文字标签：小号、低饱和，不与数值抢视觉 */
@@ -333,15 +335,21 @@ html, body {
 .best-row b { color: var(--neon-cyan); }
 
 .menu-btns { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+/* 主行动按钮: 品红, 用于「开始游戏」/「继续上局」 */
+.btn.btn-primary { color: var(--neon-magenta); border-color: rgba(255, 43, 214, 0.45); background: rgba(255, 43, 214, 0.06); }
+.btn.btn-primary:hover { color: #fff; background: rgba(255, 43, 214, 0.18); box-shadow: 0 0 22px rgba(255, 43, 214, 0.6); }
+/* 次要开始按钮: 青, 用于「重新开始」(存在续玩快照时视觉降级, 与"继续上局"拉开层级) */
+.btn.btn-restart { color: var(--neon-cyan); border-color: rgba(0, 240, 255, 0.4); background: rgba(0, 240, 255, 0.06); }
+.btn.btn-restart:hover { color: #fff; background: rgba(0, 240, 255, 0.18); box-shadow: 0 0 22px rgba(0, 240, 255, 0.55); }
 .btn.btn-2 { color: var(--neon-magenta); border-color: rgba(255, 43, 214, 0.4); background: rgba(255, 43, 214, 0.06); }
 .btn.btn-2:hover { color: #fff; background: rgba(255, 43, 214, 0.16); box-shadow: 0 0 22px rgba(255, 43, 214, 0.55); }
 .btn.btn-3 { color: var(--neon-violet); border-color: rgba(138, 91, 255, 0.4); background: rgba(138, 91, 255, 0.06); }
 .btn.btn-3:hover { color: #fff; background: rgba(138, 91, 255, 0.16); box-shadow: 0 0 22px rgba(138, 91, 255, 0.55); }
 .btn.btn-4 { color: var(--neon-lime); border-color: rgba(170, 255, 0, 0.4); background: rgba(170, 255, 0, 0.06); }
 .btn.btn-4:hover { color: #fff; background: rgba(170, 255, 0, 0.16); box-shadow: 0 0 22px rgba(170, 255, 0, 0.55); }
-/* 图鉴按钮: 天青色, 与其他菜单按钮区分, 呼应「信息/数据」意象 */
-.btn.btn-codex { color: #7df9ff; border-color: rgba(125, 249, 255, 0.4); background: rgba(125, 249, 255, 0.06); }
-.btn.btn-codex:hover { color: #fff; background: rgba(125, 249, 255, 0.18); box-shadow: 0 0 22px rgba(125, 249, 255, 0.55); }
+/* 图鉴按钮: 琥珀橙, 与"开始游戏"(青)/机库(柠檬绿)/强化实验室(紫) 明显区分 */
+.btn.btn-codex { color: #ff8a3d; border-color: rgba(255, 138, 61, 0.45); background: rgba(255, 138, 61, 0.06); }
+.btn.btn-codex:hover { color: #fff; background: rgba(255, 138, 61, 0.18); box-shadow: 0 0 22px rgba(255, 138, 61, 0.6); }
 /* 危险操作按钮（结束本局等）：暗红弱化，避免误当作主操作 */
 .btn.btn-quit { color: #ff6b7d; border-color: rgba(255, 107, 125, 0.4); background: rgba(255, 107, 125, 0.05); }
 .btn.btn-quit:hover { color: #fff; background: rgba(255, 107, 125, 0.16); box-shadow: 0 0 22px rgba(255, 107, 125, 0.5); }
@@ -365,6 +373,9 @@ html, body {
   background: rgba(255, 43, 214, 0.06);
 }
 .reward-box b { color: var(--neon-magenta); font-size: 19px; }
+/* 两种货币在结算收益里各自使用主题色, 避免撞色（提高优先级覆盖上面的默认 b 规则） */
+.reward-box b.cur-core { color: var(--neon-magenta); text-shadow: 0 0 12px var(--neon-magenta); }
+.reward-box b.shard-amt { color: var(--neon-lime); text-shadow: 0 0 12px var(--neon-lime); }
 
 /* ---------- 强化实验室商店 ---------- */
 .shop-list {
@@ -548,7 +559,6 @@ html, body {
 
 /* ---------- 图鉴 CODEX_STYLES_ANCHOR ---------- */
 .screen.codex-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 16px; }
-.screen.codex-screen { backdrop-filter: none; }
 
 /* 统一图鉴内各段宽度, 使进度条 / 分区网格 / 里程碑左右对齐 */
 .codex-prog,
@@ -566,19 +576,25 @@ html, body {
 .cs-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
 .cs-title { font-family: var(--mono); font-size: 13px; color: #b6c8e0; letter-spacing: 0.12em; text-transform: uppercase; }
 .cs-count { font-family: var(--mono); font-size: 13px; color: var(--neon-cyan); }
-.cs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.cs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
 
-/* 图鉴条目卡: 未发掘用黑色轮廓+问号, 已发掘用主题色符号+名称 */
-.codex-cell { aspect-ratio: 1 / 1; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 6px; position: relative; overflow: hidden; }
+/* 图鉴条目卡: 未发掘用黑色轮廓+问号, 已发掘用主题色符号+名称+描述 */
+.codex-cell { border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px; padding: 12px 10px; position: relative; min-height: 125px; text-align: center; }
 .codex-cell.locked { background: #05060e; border: 1.5px solid #1a2138; color: #1a2138; }
-.codex-cell.locked .cc-sym { font-size: 32px; font-weight: 700; color: #1a2138; text-shadow: none; }
+.codex-cell.locked .cc-sym { font-size: 34px; font-weight: 700; color: #1a2138; text-shadow: none; line-height: 1; }
 .codex-cell.locked .cc-name { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: #2a3550; }
+.codex-cell.locked .cc-desc { font-family: var(--mono); font-size: 11px; color: #2a3550; line-height: 1.4; opacity: 0.8; white-space: pre-line; }
 .codex-cell.owned { background: rgba(10, 14, 30, 0.8); border: 1.5px solid var(--accent, var(--neon-cyan)); box-shadow: 0 0 14px color-mix(in srgb, var(--accent, #00f0ff) 40%, transparent); }
-.codex-cell.owned .cc-sym { font-size: 32px; font-weight: 700; color: var(--accent, var(--neon-cyan)); text-shadow: 0 0 12px var(--accent, var(--neon-cyan)); }
-.codex-cell.owned .cc-name { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: #fff; text-align: center; line-height: 1.2; }
+.codex-cell.owned .cc-sym { font-size: 34px; font-weight: 700; color: var(--accent, var(--neon-cyan)); text-shadow: 0 0 12px var(--accent, var(--neon-cyan)); line-height: 1; }
+.codex-cell.owned .cc-name { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: #fff; line-height: 1.2; font-weight: 700; }
+.codex-cell.owned .cc-desc { font-family: var(--mono); font-size: 11px; color: #9fb4d2; line-height: 1.45; margin-top: 2px; white-space: pre-line; }
 
 /* 里程碑奖励行 */
 .codex-milestones { display: flex; flex-direction: column; gap: 10px; }
+/* 图鉴 → 成就区的分隔标题, 明确告知下方是收集里程碑奖励 */
+.codex-achv-title { width: min(720px, 94vw); display: flex; align-items: baseline; gap: 12px; margin-top: 6px; padding-bottom: 6px; border-bottom: 1px solid rgba(255, 138, 61, 0.35); }
+.codex-achv-title .cat-tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.24em; color: #ff8a3d; text-shadow: 0 0 10px rgba(255, 138, 61, 0.55); }
+.codex-achv-title .cat-cn { font-family: var(--mono); font-size: 14px; letter-spacing: 0.1em; color: #fff; }
 .cm-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; background: rgba(10, 14, 30, 0.6); border: 1px solid var(--panel-border); border-radius: 10px; text-align: left; }
 .cm-row.ready { border-color: var(--neon-lime); box-shadow: 0 0 18px rgba(170, 255, 0, 0.32); }
 .cm-row.claimed { opacity: 0.6; }
@@ -595,8 +611,10 @@ html, body {
 
 /* 移动端: 条目更紧凑, 里程碑行改为竖排 */
 @media (max-width: 760px), (max-height: 560px) {
-  .cs-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
-  .codex-cell.owned .cc-sym, .codex-cell.locked .cc-sym { font-size: 26px; }
+  .cs-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .codex-cell { min-height: 132px; padding: 10px 8px; }
+  .codex-cell.owned .cc-sym, .codex-cell.locked .cc-sym { font-size: 28px; }
+  .codex-cell.owned .cc-desc, .codex-cell.locked .cc-desc { font-size: 11px; }
   .cm-row { flex-direction: column; align-items: stretch; gap: 8px; }
   .cm-action { text-align: center; }
   .cm-claim { width: 100%; }
