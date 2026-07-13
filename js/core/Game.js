@@ -32,6 +32,7 @@ import { CollisionSystem } from "../systems/CollisionSystem.js";
 import { UpgradeSystem } from "../systems/UpgradeSystem.js";
 import { MetaProgression } from "../systems/MetaProgression.js";
 import { Skins } from "../systems/Skins.js";
+import { Codex } from "../systems/Codex.js";
 
 import { HUD } from "../ui/HUD.js";
 import { Screens } from "../ui/Screens.js";
@@ -83,7 +84,7 @@ export class Game {
 
     // 触摸设备：创建屏上暂停按钮（电脑端用 P/ESC）
     this.isTouch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
-    if (this.isTouch) this._createPauseButton();
+    if (this.isTouch) { this._createPauseButton(); this._createSkillButton(); }
 
     this._bindGlobalKeys();
     this._bindAutoSave();
@@ -113,6 +114,36 @@ export class Game {
   /** 显隐暂停按钮 */
   _showPauseBtn(visible) {
     if (this.pauseBtn) this.pauseBtn.style.display = visible ? "flex" : "none";
+    // 主动技能按钮显隐与暂停按钮同步（都仅在 PLAYING 显示）
+    this._syncSkillBtn(visible);
+  }
+
+  /** 创建移动端主动技能按钮（仅装备了含主动技能皮肤时可见） */
+  _createSkillButton() {
+    const btn = document.createElement("button");
+    btn.className = "skill-fab";
+    btn.setAttribute("aria-label", "主动技能");
+    btn.innerHTML = `<span class="sf-ic">◎</span><span class="sf-cd">READY</span>`;
+    btn.addEventListener("click", () => {
+      if (this.state === GameState.PLAYING) this.player.releaseActiveSkill(this);
+    });
+    (this.canvas.parentElement || document.body).appendChild(btn);
+    this.skillBtn = btn;
+  }
+
+  /** 每帧同步主动技能按钮显隐 + 冷却文本（PLAYING 且装备了含主动技能皮肤时才显示） */
+  _syncSkillBtn(visibleOverride) {
+    if (!this.skillBtn) return;
+    const sk = this.player && this.player.activeSkill;
+    const canShow = !!sk && (visibleOverride !== undefined ? visibleOverride : this.state === GameState.PLAYING);
+    if (!canShow) { this.skillBtn.style.display = "none"; return; }
+    this.skillBtn.style.display = "flex";
+    const ready = sk.timer <= 0;
+    this.skillBtn.classList.toggle("cooldown", !ready);
+    const cdEl = this.skillBtn.querySelector(".sf-cd");
+    if (cdEl) cdEl.textContent = ready ? "READY" : `${sk.timer.toFixed(1)}s`;
+    const icEl = this.skillBtn.querySelector(".sf-ic");
+    if (icEl && sk.icon) icEl.textContent = sk.icon;
   }
 
   // 活跃实体列表（只读视图，供系统/实体迭代）
@@ -144,6 +175,10 @@ export class Game {
         if (this._levelChoices && this._levelChoices[idx]) {
           this._applyUpgrade(this._levelChoices[idx]);
         }
+      }
+      // 空格: 释放当前皮肤附带的主动技能（若已装备且冷却就绪）
+      if (k === " " && this.state === GameState.PLAYING) {
+        this.player.releaseActiveSkill(this);
       }
     });
   }
@@ -207,6 +242,16 @@ export class Game {
     if (sp.weapons && typeof sp.weapons === "object") p.weapons = JSON.parse(JSON.stringify(sp.weapons));
     if (sp.acquired && typeof sp.acquired === "object") p.acquired = JSON.parse(JSON.stringify(sp.acquired));
     if (sp.skin && typeof sp.skin === "object") p.skin = { ...p.skin, ...sp.skin };
+    // 快照不保存主动技能状态, 依当前选中皮肤重新推导（保证续玩仍有主动技能可用）
+    p.activeSkill = null;
+    const curSkin = Skins.get(Skins.selected(this.save));
+    if (curSkin && curSkin.perk) {
+      // 只重放主动技能相关字段, 不重复注入数值加成（数值加成已在快照 player.* 中恢复）
+      // 通过临时对象跑一遍 perk, 再把 activeSkill 挑出来
+      const probe = { activeSkill: null, damageMul: 1, critChance: 0, cooldownMul: 1, lifesteal: 0, speed: 1, maxHp: 0, hp: 0, damageReduction: 0, pickupRange: 1 };
+      try { curSkin.perk(probe, Math.max(1, Skins.starOf(this.save, curSkin.id))); } catch (_e) { /* ignore */ }
+      if (probe.activeSkill) p.activeSkill = { ...probe.activeSkill, timer: 0 };
+    }
     p.invuln = 0;
 
     // 清空场上实体（重开一片战场），难度进度由 spawnSystem 延续
@@ -262,6 +307,8 @@ export class Game {
 
     // 战术预载：开局立即领取额外强化选择
     if (this.player.pendingLevels > 0) this.onLevelUp();
+    // 图鉴: 开局默认拥有脉冲枪, 视为已发掘
+    Codex.discover(this.save, "weapons", "blaster");
   }
 
   /** 显示主菜单 */
@@ -274,7 +321,27 @@ export class Game {
       onResume: hasRun ? () => this._resumeRun() : null,
       onShop: () => this._openShop(),
       onHangar: () => this._openHangar(),
+      onCodex: () => this._openCodex(),
       onAccount: () => this._openAccount(),
+    });
+  }
+
+  /** 打开图鉴（收集情报 + 里程碑奖励） */
+  _openCodex() {
+    this.audio.init();
+    this.state = GameState.CODEX;
+    this._showPauseBtn(false);
+    this.screens.showCodex(this.save, {
+      // 领取回调只做数据变更 + 落盘, 不重建整页; 界面的按钮/样式由 showCodex 内部局部更新
+      onClaim: (id) => {
+        const res = Codex.claim(this.save, id);
+        if (res) {
+          SaveData.save(this.user.id, this.save);
+          this.audio.levelup();
+        }
+        return res;
+      },
+      onBack: () => this._showMenu(),
     });
   }
 
@@ -424,6 +491,10 @@ export class Game {
   _applyUpgrade(u) {
     UpgradeSystem.apply(u, this.player);
     this.particles.text(this.player.x, this.player.y - 40, u.name, u.accent, 20);
+    // 图鉴: 武器解锁项 (id 形如 unlock_xxx) -> 记录到 weapons 分类
+    if (u && u.unlock && typeof u.id === "string" && u.id.startsWith("unlock_")) {
+      Codex.discover(this.save, "weapons", u.id.slice("unlock_".length));
+    }
     this.screens.clear();
     // 优先消耗“战术预载”额外次数，其次是常规经验溢出
     if (this.player.pendingLevels > 0) { this.player.pendingLevels--; this.onLevelUp(); }
@@ -443,6 +514,8 @@ export class Game {
     if (e) {
       e.spawn(type, x, y, hpScale);
       if (e.isBoss) this.bosses.push(e); // 记录当前 Boss 供血条显示（支持并存多个）
+      // 图鉴埋点: 首次遭遇即记录. Boss / 普通分开归类, 界面分区展示.
+      Codex.discover(this.save, e.isBoss ? "bosses" : "enemies", type);
     }
     return e;
   }
@@ -461,6 +534,8 @@ export class Game {
   spawnGem(x, y, value, type = DropType.XP) {
     const g = this._gemPool.obtain();
     if (g) g.spawn(x, y, value, type);
+    // 图鉴埋点: 记录道具类型（经验晶体除外, 不作为收集条目）
+    if (type !== DropType.XP) Codex.discover(this.save, "items", type);
   }
 
   /** 记录一条瞬时电弧光束（电弧链武器用），由主循环衰减、render 绘制 */
@@ -584,6 +659,9 @@ export class Game {
       for (const b of this.beams) b.life -= rawDt;
       this.beams = this.beams.filter((b) => b.life > 0);
     }
+
+    // 移动端主动技能按钮冷却文本同步（低成本, 每帧调用即可）
+    if (this.skillBtn) this._syncSkillBtn();
 
     this.render();
 

@@ -28,6 +28,10 @@ function defaults() {
       selected: "drift",            // 当前选中外观
       lastFreeDraw: "",             // 上次领取每日免费抽卡的本地日期（YYYY-MM-DD）
     },
+    // 图鉴：局内首次遭遇的敌人/Boss/武器/道具, 达到里程碑可领取奖励
+    codex: {
+      enemies: {}, bosses: {}, weapons: {}, items: {}, claimed: {},
+    },
   };
 }
 
@@ -84,6 +88,22 @@ export const SaveData = {
         // 仅接受 YYYY-MM-DD 形式的日期字符串，其余忽略
         if (typeof parsed.skins.lastFreeDraw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.skins.lastFreeDraw)) {
           d.skins.lastFreeDraw = parsed.skins.lastFreeDraw;
+        }
+      }
+      // 图鉴：仅接受 boolean 标记的对象, 忽略任意其它结构避免存档污染
+      if (parsed.codex && typeof parsed.codex === "object") {
+        for (const cat of ["enemies", "bosses", "weapons", "items", "claimed"]) {
+          const src = parsed.codex[cat];
+          if (src && typeof src === "object") {
+            const dst = {};
+            for (const k of Object.keys(src)) {
+              // key 长度限制, 避免异常长字段
+              if (typeof k === "string" && k.length > 0 && k.length <= 64 && src[k] === true) {
+                dst[k] = true;
+              }
+            }
+            d.codex[cat] = dst;
+          }
         }
       }
     } catch (_e) {

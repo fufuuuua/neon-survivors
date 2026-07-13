@@ -52,9 +52,48 @@ export class HUD {
     // ---- 左下：已装备武器 ----
     this._weapons(ctx, player, H);
 
+    // ---- 右下：主动技能冷却盘（仅当皮肤附带主动技能时显示） ----
+    if (player.activeSkill) this._activeSkill(ctx, player, W, H);
+
     // ---- 触摸虚拟摇杆 ----
     this._joystick(ctx, game.input);
 
+    ctx.restore();
+  }
+
+  /** 主动技能：右下角圆环冷却盘 + 图标 + 就绪时提示按键 */
+  _activeSkill(ctx, player, W, H) {
+    const sk = player.activeSkill;
+    const cd = sk.cooldown || 1;
+    const ready = sk.timer <= 0;
+    const ratio = Math.max(0, Math.min(1, 1 - sk.timer / cd));
+    const r = 26;
+    const cx = W - 40;
+    const cy = H - 52;
+    const color = ready ? "#7df9ff" : "#3a4356";
+    ctx.save();
+    // 底盘
+    ctx.fillStyle = "rgba(10,14,30,0.85)";
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+    // 冷却进度圆环（从顶部顺时针填充）
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = ready ? 12 : 0; ctx.shadowColor = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r - 2, -Math.PI / 2, -Math.PI / 2 + TAU * ratio);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // 图标
+    ctx.fillStyle = color;
+    ctx.font = "700 22px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(sk.icon || "◎", cx, cy + 1);
+    // 就绪提示 / 剩余秒数
+    ctx.font = "600 10px 'JetBrains Mono', monospace";
+    ctx.fillStyle = ready ? "#aaff00" : "#8fa9c8";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(ready ? "SPACE" : `${sk.timer.toFixed(1)}s`, cx, cy + r + 4);
     ctx.restore();
   }
 

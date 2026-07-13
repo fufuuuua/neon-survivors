@@ -6,6 +6,7 @@ import { formatTime } from "../utils/math.js";
 import { UpgradeSystem } from "../systems/UpgradeSystem.js";
 import { MetaProgression } from "../systems/MetaProgression.js";
 import { Skins, RARITY, MAX_STAR } from "../systems/Skins.js";
+import { Codex } from "../systems/Codex.js";
 import { Account } from "../core/Account.js";
 
 /** HTML 转义：防止用户输入的昵称 / ID 破坏 DOM 结构或注入脚本 */
@@ -52,7 +53,7 @@ export class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, user, { onStart, onResume, onShop, onHangar, onAccount }) {
+  showMenu(save, user, { onStart, onResume, onShop, onHangar, onCodex, onAccount }) {
     this.clear();
     const b = save.best;
     const resumeBtn = onResume
@@ -86,6 +87,7 @@ export class Screens {
         <button class="btn ${onResume ? "btn-2" : ""}" id="btn-start">▶ ${onResume ? "重新开始" : "开始游戏"}</button>
         <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
+        <button class="btn btn-codex" id="btn-codex">▤ 图鉴</button>
       </div>
       <div class="hint">${this.isTouch
         ? "拖动屏幕移动 · 点击右上角按钮暂停<br>武器自动开火"
@@ -95,6 +97,7 @@ export class Screens {
     el.querySelector("#btn-start").addEventListener("click", onStart);
     el.querySelector("#btn-shop").addEventListener("click", onShop);
     el.querySelector("#btn-hangar").addEventListener("click", onHangar);
+    if (onCodex) el.querySelector("#btn-codex").addEventListener("click", onCodex);
     if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
     if (onAccount) {
       const bar = el.querySelector("#user-bar");
@@ -360,6 +363,108 @@ export class Screens {
     });
     this.root.appendChild(el);
     el.querySelector("#btn-close").addEventListener("click", onClose);
+  }
+
+  // ---------------- 图鉴 ----------------
+
+  /**
+   * 图鉴界面: 四类条目网格 + 收集度进度条 + 里程碑奖励条目.
+   * 未发掘条目: 黑色轮廓 + 问号占位; 已发掘: 主题色符号 + 名称.
+   */
+  showCodex(save, { onClaim, onBack }) {
+    this.clear();
+    const prog = Codex.progress(save);
+    const el = this._make(`
+      <div class="sub">CODEX · 图鉴</div>
+      <h2 class="neon-title">情报库</h2>
+      <div class="codex-prog">
+        <div class="cp-bar"><div class="cp-fill" style="width:${prog.total ? (prog.owned / prog.total * 100).toFixed(1) : 0}%"></div></div>
+        <div class="cp-text">收集进度 <b>${prog.owned}</b> / ${prog.total}</div>
+      </div>
+      <div class="codex-body"></div>
+      <div class="codex-milestones"></div>
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+      <div class="hint">局内首次遭遇即录入图鉴 · 未发掘条目以黑色轮廓显示 · 达成里程碑可领取奖励</div>
+    `, "codex-screen");
+
+    const body = el.querySelector(".codex-body");
+    for (const cat of Codex.categories()) {
+      const items = cat.list();
+      const meta = prog.byCategory[cat.key] || { owned: 0, total: items.length };
+      const section = document.createElement("div");
+      section.className = "codex-section";
+      section.innerHTML = `
+        <div class="cs-header">
+          <div class="cs-title">${cat.title}</div>
+          <div class="cs-count">${meta.owned}/${meta.total}</div>
+        </div>
+        <div class="cs-grid"></div>
+      `;
+      const grid = section.querySelector(".cs-grid");
+      for (const entry of items) {
+        const owned = Codex.discovered(save, cat.key, entry.id);
+        const cell = document.createElement("div");
+        cell.className = `codex-cell${owned ? " owned" : " locked"}`;
+        cell.style.setProperty("--accent", entry.color);
+        cell.innerHTML = `
+          <div class="cc-sym">${owned ? entry.symbol : "?"}</div>
+          <div class="cc-name">${owned ? entry.name : "???"}</div>
+        `;
+        grid.appendChild(cell);
+      }
+      body.appendChild(section);
+    }
+
+    // 里程碑奖励条目：达成可领取 / 已领取 / 未达成.
+    // 领取时只做局部 DOM 更新（不整页重建）, 避免闪动.
+    const msBox = el.querySelector(".codex-milestones");
+    const buildMilestoneRow = (m) => {
+      const need = Codex.needOf(m);
+      const reached = prog.owned >= need;
+      const claimed = Codex.claimed(save, m.id);
+      const row = document.createElement("div");
+      row.className = `cm-row${claimed ? " claimed" : reached ? " ready" : ""}`;
+      row.dataset.mid = m.id;
+      const rw = m.reward || {};
+      const rewardText = [
+        rw.shards ? `✦ ${rw.shards}` : null,
+        rw.cores ? `◆ ${rw.cores}` : null,
+        rw.skin ? `皮肤「${(Skins.get(rw.skin) || {}).name || rw.skin}」` : null,
+        rw.active ? "主动技能" : null,
+      ].filter(Boolean).join(" · ");
+      row.innerHTML = `
+        <div class="cm-info">
+          <div class="cm-title">${m.label} <span class="cm-need">${need} 项</span></div>
+          <div class="cm-desc">${m.desc}</div>
+          <div class="cm-reward">奖励: ${rewardText || "—"}</div>
+        </div>
+        <div class="cm-action"></div>
+      `;
+      const action = row.querySelector(".cm-action");
+      if (claimed) {
+        action.innerHTML = `<span class="cm-claimed">已领取</span>`;
+      } else if (reached) {
+        const btn = document.createElement("button");
+        btn.className = "cm-claim";
+        btn.textContent = "领取";
+        btn.addEventListener("click", () => {
+          const res = onClaim(m.id);
+          if (!res) return;
+          // 局部切换: 该行从 ready -> claimed, 按钮换为"已领取"文案
+          row.classList.remove("ready");
+          row.classList.add("claimed");
+          action.innerHTML = `<span class="cm-claimed">已领取</span>`;
+        });
+        action.appendChild(btn);
+      } else {
+        action.innerHTML = `<span class="cm-pending">${prog.owned} / ${need}</span>`;
+      }
+      return row;
+    };
+    for (const m of Codex.milestones()) msBox.appendChild(buildMilestoneRow(m));
+
+    this.root.appendChild(el);
+    el.querySelector("#btn-back").addEventListener("click", onBack);
   }
 
   // ---------------- 账号管理 ----------------

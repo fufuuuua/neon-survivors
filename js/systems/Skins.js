@@ -89,6 +89,29 @@ const SKINS = [
     },
     perkText: (s) => `暴击 +${4 * s}% · 攻速 +${Math.round((1 / Math.pow(0.97, s) - 1) * 100)}% · 击杀吸血 +${(0.6 * s).toFixed(1)}`,
   },
+  // ---------------- 图鉴解锁（不参与抽卡池, 仅通过 100% 图鉴收集获得） ----------------
+  {
+    id: "omniscient", name: "万象编纂", rarity: "legendary", shape: "codex", accent: "#7df9ff",
+    desc: "由所有战场情报编织而成的智能核心, 携带主动技能「归零协议」.",
+    hidden: true, // 不参与抽卡权重
+    perk: (p, s) => {
+      // 全面但克制的加成; 主打的是主动技能, 而非常规数值.
+      p.damageMul *= 1 + 0.03 * s;
+      p.critChance = Math.min(1, p.critChance + 0.02 * s);
+      // 装备该皮肤即获得主动技能: 空格释放, 会经玩家的 cooldownMul 缩短冷却.
+      p.activeSkill = {
+        id: "zeroProtocol",
+        name: "归零协议",
+        icon: "◎",
+        cooldown: 30,         // 基础冷却 30s
+        maxCooldown: 30,
+        timer: 0,             // 就绪
+        // 效果: 对屏内敌人造成范围重创, 清屏敌方弹幕, 短暂无敌.
+        // (具体实现在 Player.releaseActiveSkill 中调用 game 服务方法, 保持解耦)
+      };
+    },
+    perkText: (s) => `伤害 +${3 * s}% · 暴击 +${2 * s}% · 附带主动技能「归零协议」`,
+  },
 ];
 
 const BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]));
@@ -167,7 +190,7 @@ export class Skins {
     return Skins.drawOne(save);
   }
 
-  /** 按稀有度权重随机抽取一个外观 */
+  /** 按稀有度权重随机抽取一个外观（跳过隐藏皮肤: 仅通过图鉴等特殊途径获取） */
   static _rollSkin() {
     const total = Object.values(RARITY).reduce((a, r) => a + r.weight, 0);
     let r = Math.random() * total;
@@ -176,8 +199,10 @@ export class Skins {
       if (r < rar.weight) { picked = rar.key; break; }
       r -= rar.weight;
     }
-    const pool = SKINS.filter((s) => s.rarity === picked);
-    return pool[Math.floor(Math.random() * pool.length)];
+    const pool = SKINS.filter((s) => s.rarity === picked && !s.hidden);
+    // 该稀有度全部为隐藏皮肤时兜底到普通池, 保证抽卡不会返回 undefined
+    const safePool = pool.length ? pool : SKINS.filter((s) => s.rarity === "common" && !s.hidden);
+    return safePool[Math.floor(Math.random() * safePool.length)];
   }
 
   /**
@@ -303,6 +328,34 @@ export class Skins {
         ctx.fillStyle = "#05060e";
         ctx.beginPath(); ctx.arc(0, 0, r * 0.4, 0, TAU); ctx.fill();
         return; // 已绘制核心，直接返回
+      }
+      case "codex": { // 万象编纂: 三层同心多边形 + 十字光轴, 象征"编纂/汇总"
+        // 外层六边框
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = -Math.PI / 2 + i * (TAU / 6);
+          const px = Math.cos(a) * r * 1.05, py = Math.sin(a) * r * 1.05;
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.closePath(); ctx.stroke();
+        // 中层四芒
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 0.85); ctx.lineTo(r * 0.42, 0);
+        ctx.lineTo(0, r * 0.85); ctx.lineTo(-r * 0.42, 0);
+        ctx.closePath();
+        ctx.globalAlpha = 0.35; ctx.fill();
+        ctx.globalAlpha = 1; ctx.stroke();
+        // 十字光轴
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 1.05); ctx.lineTo(0, r * 1.05);
+        ctx.moveTo(-r * 1.05, 0); ctx.lineTo(r * 1.05, 0);
+        ctx.stroke();
+        // 中心亮点
+        ctx.shadowBlur = 14; ctx.shadowColor = color;
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, TAU); ctx.fill();
+        break;
       }
       case "arrow":
       default: { // 经典侦察三角

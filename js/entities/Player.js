@@ -57,6 +57,8 @@ export class Player {
 
     // 当前外观（默认漂移者三角机，开局由 Skins.applyTo 覆盖为选中外观）
     this.skin = { id: "drift", shape: "arrow", accent: "#00f0ff", star: 1 };
+    // 主动技能: 由特殊皮肤 perk 注入; 未装备主动皮肤时保持 null
+    this.activeSkill = null;
   }
 
   get alive() { return this.hp > 0; }
@@ -87,6 +89,8 @@ export class Player {
     if (this.invuln > 0) this.invuln -= dt;
     if (this.regen > 0) this.heal(this.regen * dt);
     this.animT += dt;
+    // 主动技能冷却递减（不受时间缩放外的额外影响; 空格键释放在 Game 层触发）
+    if (this.activeSkill && this.activeSkill.timer > 0) this.activeSkill.timer -= dt;
 
     // 移动
     this.moveDir = input.getMoveVector();
@@ -110,6 +114,45 @@ export class Player {
     this.y = clamp(this.y, this.radius, CONFIG.world.height - this.radius);
 
     this._updateWeapons(dt, game);
+  }
+
+  // ---------------- 主动技能 ----------------
+  /**
+   * 释放主动技能「归零协议」: 对屏内敌人造成范围重创, 清屏敌方弹幕, 短暂无敌 + 演出.
+   * 冷却结束才能触发, 触发后按当前 cooldownMul 缩短的冷却重新计时.
+   */
+  releaseActiveSkill(game) {
+    const sk = this.activeSkill;
+    if (!sk || sk.timer > 0) return false;
+    sk.timer = sk.cooldown * this.cooldownMul;
+
+    // 效果 1: 对屏内敌人造成重创（Boss 也吃, 但伤害有上限, 避免一键秒 Boss）
+    const cam = game.camera;
+    const pad = 40;
+    const minX = cam.x - pad, minY = cam.y - pad;
+    const maxX = cam.x + game.viewW + pad, maxY = cam.y + game.viewH + pad;
+    const dmgNormal = 9999;
+    const dmgBoss = 240 + this.level * 12; // 缓和的 Boss 伤害曲线
+    for (const e of game.enemies) {
+      if (!e.active) continue;
+      if (e.x < minX || e.x > maxX || e.y < minY || e.y > maxY) continue;
+      game.damageEnemy(e, e.isBoss ? dmgBoss : dmgNormal, false);
+    }
+    // 效果 2: 清屏所有敌方弹幕
+    for (const b of game.enemyProjectiles) b.active = false;
+
+    // 效果 3: 短暂无敌 + 屏幕演出
+    this.invuln = Math.max(this.invuln, 1.4);
+    game.screenFlash(0.75);
+    game.slowmo(0.35);
+    game.camera.shake(28);
+    const colors = ["#7df9ff", "#00f0ff", "#ffffff"];
+    for (let w = 0; w < 3; w++) {
+      game.particles.burst(this.x, this.y, colors[w], 40, 260 + w * 160, 5, 1.0);
+    }
+    game.particles.text(this.x, this.y - 40, "归零协议", "#7df9ff", 30);
+    if (game.audio.bossKill) game.audio.bossKill();
+    return true;
   }
 
   // ---------------- 武器逻辑 ----------------

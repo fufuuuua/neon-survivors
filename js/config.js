@@ -112,6 +112,7 @@ export const GameState = Object.freeze({
   MENU: "MENU",
   SHOP: "SHOP",
   HANGAR: "HANGAR",
+  CODEX: "CODEX",
   PLAYING: "PLAYING",
   LEVELUP: "LEVELUP",
   PAUSED: "PAUSED",
