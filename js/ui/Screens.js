@@ -6,6 +6,14 @@ import { formatTime } from "../utils/math.js";
 import { UpgradeSystem } from "../systems/UpgradeSystem.js";
 import { MetaProgression } from "../systems/MetaProgression.js";
 import { Skins, RARITY, MAX_STAR } from "../systems/Skins.js";
+import { Account } from "../core/Account.js";
+
+/** HTML 转义：防止用户输入的昵称 / ID 破坏 DOM 结构或注入脚本 */
+function esc(str) {
+  return String(str).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
 
 export class Screens {
   constructor(root) {
@@ -44,13 +52,22 @@ export class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, { onStart, onResume, onShop, onHangar }) {
+  showMenu(save, user, { onStart, onResume, onShop, onHangar, onAccount }) {
     this.clear();
     const b = save.best;
     const resumeBtn = onResume
       ? `<button class="btn" id="btn-resume">↩ 继续上局</button>`
       : "";
+    const userBar = user
+      ? `
+      <div class="user-bar" id="user-bar" title="点击切换或管理玩家">
+        <span class="user-ic">👤</span>
+        <span class="user-name">${esc(user.name)}</span>
+        <span class="user-switch">切换 ▸</span>
+      </div>`
+      : "";
     const el = this._make(`
+      ${userBar}
       <div class="sub">ROGUELITE · SURVIVOR · 霓虹幸存者</div>
       <h1 class="neon-title">NEON DRIFT</h1>
       <div class="cores-balance">
@@ -79,6 +96,10 @@ export class Screens {
     el.querySelector("#btn-shop").addEventListener("click", onShop);
     el.querySelector("#btn-hangar").addEventListener("click", onHangar);
     if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
+    if (onAccount) {
+      const bar = el.querySelector("#user-bar");
+      if (bar) bar.addEventListener("click", onAccount);
+    }
   }
 
   /** 强化实验室：花费核心购买永久升级 */
@@ -198,7 +219,7 @@ export class Screens {
         <button class="btn" id="btn-restart">↻ 再来一局</button>
         <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
-        <button class="btn btn-3" id="btn-menu">主菜单</button>
+        <button class="btn btn-2" id="btn-menu">主菜单</button>
       </div>
     `);
     this.root.appendChild(el);
@@ -251,6 +272,24 @@ export class Screens {
       <div class="hint">每天可免费抽一次 · 重复抽取升星强化专属特性 · 满星后返还棱牌</div>
     `, "hangar-screen");
     const grid = el.querySelector(".skin-grid");
+    // 装备切换 -> 只改按钮 textContent + classList, DOM 结构 0 变化.
+    // (避免 innerHTML 替换在 backdrop-filter 背板上触发整屏重绘导致的闪动)
+    const applyEquipState = (card, isSel) => {
+      card.classList.toggle("selected", isSel);
+      const btn = card.querySelector(".skin-select");
+      if (!btn) return;
+      btn.textContent = isSel ? "已装备" : "装备";
+      btn.classList.toggle("equipped", isSel);
+      btn.disabled = isSel;
+    };
+    const equipSkin = (skinId) => {
+      const next = grid.querySelector(`.skin-card[data-skin-id="${skinId}"]`);
+      if (!next || next.classList.contains("selected")) return;
+      const prev = grid.querySelector(".skin-card.selected");
+      if (prev) applyEquipState(prev, false);
+      applyEquipState(next, true);
+      onSelect(skinId);
+    };
     for (const skin of Skins.list()) {
       const rar = RARITY[skin.rarity];
       const star = Skins.starOf(save, skin.id);
@@ -258,30 +297,22 @@ export class Screens {
       const isSel = owned && skin.id === selected;
       const card = document.createElement("div");
       card.className = `skin-card rar-${skin.rarity}${owned ? "" : " locked"}${isSel ? " selected" : ""}`;
+      card.dataset.skinId = skin.id;
       card.style.setProperty("--accent", rar.color);
+      const actionHTML = owned
+        ? `<button class="skin-select${isSel ? " equipped" : ""}" type="button"${isSel ? " disabled" : ""}>${isSel ? "已装备" : "装备"}</button>`
+        : `<span class="skin-lockicon">🔒</span>`;
       card.innerHTML = `
         <div class="skin-rar" style="color:${rar.color}">${rar.name}</div>
         <canvas class="skin-canvas" width="120" height="120"></canvas>
         <div class="skin-name">${owned ? skin.name : "？？？"}</div>
         <div class="skin-stars" style="color:${rar.color}">${owned ? this._stars(star) : this._stars(0)}</div>
         <div class="skin-perk">${owned ? skin.perkText(Math.max(1, star)) : "未解锁 · 抽卡获取"}</div>
-        <div class="skin-action"></div>
+        <div class="skin-action">${actionHTML}</div>
       `;
-      const canvas = card.querySelector(".skin-canvas");
-      this._drawSkinPreview(canvas, skin, owned ? skin.accent : "#3a4356");
-      const action = card.querySelector(".skin-action");
+      this._drawSkinPreview(card.querySelector(".skin-canvas"), skin, owned ? skin.accent : "#3a4356");
       if (owned) {
-        if (isSel) {
-          action.innerHTML = `<span class="skin-equipped">已装备</span>`;
-        } else {
-          const btn = document.createElement("button");
-          btn.className = "skin-select";
-          btn.textContent = "装备";
-          btn.addEventListener("click", () => onSelect(skin.id));
-          action.appendChild(btn);
-        }
-      } else {
-        action.innerHTML = `<span class="skin-lockicon">🔒</span>`;
+        card.querySelector(".skin-select").addEventListener("click", () => equipSkin(skin.id));
       }
       grid.appendChild(card);
     }
@@ -329,5 +360,91 @@ export class Screens {
     });
     this.root.appendChild(el);
     el.querySelector("#btn-close").addEventListener("click", onClose);
+  }
+
+  // ---------------- 账号管理 ----------------
+
+  /**
+   * 用户管理界面：切换 / 创建 / 重命名 / 删除。
+   * 所有变更通过回调回传给上层（Game）落盘。
+   */
+  showAccount(currentId, { onSwitch, onCreate, onRename, onDelete, onBack }) {
+    this.clear();
+    const el = this._make(`
+      <div class="sub">PILOT REGISTRY · 玩家档案</div>
+      <h2 class="neon-title">选择玩家</h2>
+      <div class="hint">同一浏览器可保存多份进度; ID 由系统自动分配, 也是未来云端存档 / 排行榜的账号标识</div>
+
+      <div class="user-list"></div>
+
+      <div class="user-create">
+        <div class="uc-title">＋ 创建新玩家</div>
+        <div class="uc-row">
+          <label>昵称</label>
+          <input id="in-name" maxlength="${Account.NAME_MAX}" placeholder="例如：星穹指挥官" autocomplete="off" />
+        </div>
+        <div class="uc-error" id="uc-error"></div>
+        <button class="btn" id="btn-create">✦ 创建并使用</button>
+      </div>
+
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+    `, "account-screen");
+
+    const list = el.querySelector(".user-list");
+    const users = Account.list();
+    if (users.length === 0) {
+      list.innerHTML = `<div class="hint">尚无玩家档案</div>`;
+    } else {
+      for (const u of users) {
+        const isCur = u.id === currentId;
+        const row = document.createElement("div");
+        row.className = `user-row${isCur ? " current" : ""}`;
+        row.innerHTML = `
+          <div class="ur-info">
+            <div class="ur-name">${esc(u.name)}${isCur ? ' <span class="ur-tag">当前</span>' : ""}</div>
+            <div class="ur-id">#${esc(u.id)}</div>
+          </div>
+          <div class="ur-actions">
+            ${isCur ? "" : `<button class="ur-btn ur-use">使用</button>`}
+            <button class="ur-btn ur-rename">重命名</button>
+            <button class="ur-btn ur-del">删除</button>
+          </div>
+        `;
+        const useBtn = row.querySelector(".ur-use");
+        if (useBtn) useBtn.addEventListener("click", () => onSwitch(u.id));
+
+        row.querySelector(".ur-rename").addEventListener("click", () => {
+          // 使用 prompt 保持零依赖；输入会经过 Account.rename 内部清洗
+          const next = window.prompt("新昵称", u.name);
+          if (next != null) {
+            const err = onRename(u.id, next);
+            if (err) window.alert(err);
+          }
+        });
+        row.querySelector(".ur-del").addEventListener("click", () => {
+          // 二次确认，避免误删除
+          if (window.confirm(`确定删除玩家「${u.name}」? 该玩家的存档、进度、外观都会被清除, 无法恢复。`)) {
+            onDelete(u.id);
+          }
+        });
+        list.appendChild(row);
+      }
+    }
+
+    const nameIn = el.querySelector("#in-name");
+    const errBox = el.querySelector("#uc-error");
+    const showErr = (msg) => { errBox.textContent = msg || ""; };
+    el.querySelector("#btn-create").addEventListener("click", () => {
+      showErr("");
+      const err = onCreate({ name: nameIn.value });
+      if (err) showErr(err);
+    });
+    // 回车触发创建, 提升键盘用户体验
+    nameIn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); el.querySelector("#btn-create").click(); }
+    });
+
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+    this.root.appendChild(el);
   }
 }

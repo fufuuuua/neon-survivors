@@ -135,6 +135,200 @@ const GameState = Object.freeze({
 Object.assign(exports, { CONFIG, GameState });
 };
 
+__defs["/Users/fiona/Desktop/neon-survivors/js/core/Account.js"] = function (exports, require) {
+/**
+ * Account.js — 本地"账号"管理（localStorage 分区）。
+ *
+ * 每位玩家拥有一个稳定的 userId（默认为 8 位随机字母数字，可由玩家自定义），
+ * 所有存档 / 对局快照都按 `<key>:<userId>` 分区存储，避免共用同一浏览器时互相覆盖。
+ * 该 userId 未来会作为 EdgeOne KV 的 key，实现云端同步 / 多人榜单等能力。
+ *
+ * 安全：
+ *  - 用户输入的 ID / 昵称做严格的字符与长度校验，避免注入奇怪的 key。
+ *  - 读写只经 JSON.parse / JSON.stringify，绝不 eval 或反序列化任意对象。
+ */
+const KEY = "neondrift.account.v1";
+
+/** 允许的 ID 字符：仅数字, 长度 ≥ 3（如 001、002、... 、1024）。 */
+const ID_RE = /^\d{3,}$/;
+/** 昵称：任意可见字符，长度 1-16（去首尾空白） */
+const NAME_MAX = 16;
+
+/**
+ * 依据现有用户列表生成下一个递增 ID (最小 3 位, 从 001 开始)。
+ * 规则:
+ *  - 取现有 ID 的最大数值 + 1;
+ *  - 位数不足 3 位时前补 0, 超过 3 位自然增长为 4 / 5 位。
+ * 这样 ID 稳定、可读、可作为 EdgeOne KV 的 key。
+ */
+function nextId(users) {
+  let max = 0;
+  for (const u of users) {
+    if (u && typeof u.id === "string" && ID_RE.test(u.id)) {
+      const n = parseInt(u.id, 10);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+  }
+  const next = max + 1;
+  return String(next).padStart(3, "0");
+}
+
+/** 昵称清洗：去掉控制字符，压缩空白，截断到 NAME_MAX */
+function sanitizeName(raw) {
+  if (typeof raw !== "string") return "";
+  // 允许中英文/emoji 等可见字符，剔除控制符
+  let s = raw.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  if (!s) return "";
+  // 折叠内部空白
+  s = s.replace(/\s+/g, " ");
+  if (s.length > NAME_MAX) s = s.slice(0, NAME_MAX);
+  return s;
+}
+
+/** 默认结构 */
+function emptyStore() {
+  return { currentId: "", users: [] };
+}
+
+function loadRaw() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return emptyStore();
+    const p = JSON.parse(raw);
+    if (!p || typeof p !== "object") return emptyStore();
+    const store = emptyStore();
+    if (Array.isArray(p.users)) {
+      for (const u of p.users) {
+        if (!u || typeof u !== "object") continue;
+        if (typeof u.id !== "string" || !ID_RE.test(u.id)) continue;
+        const name = sanitizeName(u.name) || u.id;
+        const createdAt = Number(u.createdAt) || Date.now();
+        if (store.users.some((x) => x.id === u.id)) continue; // 去重
+        store.users.push({ id: u.id, name, createdAt });
+      }
+    }
+    if (typeof p.currentId === "string" && store.users.some((u) => u.id === p.currentId)) {
+      store.currentId = p.currentId;
+    }
+    return store;
+  } catch (_e) {
+    return emptyStore();
+  }
+}
+
+function saveRaw(store) {
+  try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (_e) { /* 隐私模式静默降级 */ }
+}
+
+const Account = {
+  ID_RE,
+  NAME_MAX,
+  sanitizeName,
+
+  /**
+   * 初始化：读取账号库，若没有任何用户则自动创建默认账号 (ID = 001)。
+   * 返回 { store, current }
+   */
+  init() {
+    let store = loadRaw();
+
+    if (store.users.length === 0) {
+      // 全新用户 —— 建立首个账号, ID = 001
+      const id = nextId(store.users);
+      store.users.push({ id, name: "指挥官", createdAt: Date.now() });
+      store.currentId = id;
+      saveRaw(store);
+    } else if (!store.currentId || !store.users.some((u) => u.id === store.currentId)) {
+      // currentId 丢失或指向不存在的用户
+      store.currentId = store.users[0].id;
+      saveRaw(store);
+    }
+
+    return { store, current: store.users.find((u) => u.id === store.currentId) };
+  },
+
+  list() { return loadRaw().users.slice().sort((a, b) => b.createdAt - a.createdAt); },
+
+  current() {
+    const store = loadRaw();
+    return store.users.find((u) => u.id === store.currentId) || null;
+  },
+
+  /**
+   * 创建新用户: ID 由系统按已有列表自动递增分配 (001, 002, ...)。
+   * @param {{name:string}} input
+   * @returns {{ok:true, user}|{ok:false, error:string}}
+   */
+  create({ name }) {
+    const store = loadRaw();
+    const cleanName = sanitizeName(name);
+    if (!cleanName) return { ok: false, error: "昵称不能为空" };
+
+    const id = nextId(store.users);
+    const user = { id, name: cleanName, createdAt: Date.now() };
+    store.users.push(user);
+    store.currentId = id;
+    saveRaw(store);
+    return { ok: true, user };
+  },
+
+  /** 切换当前用户，返回是否切换成功 */
+  switchTo(id) {
+    const store = loadRaw();
+    if (!store.users.some((u) => u.id === id)) return false;
+    if (store.currentId === id) return false;
+    store.currentId = id;
+    saveRaw(store);
+    return true;
+  },
+
+  /** 重命名。返回错误消息或 null */
+  rename(id, name) {
+    const store = loadRaw();
+    const u = store.users.find((x) => x.id === id);
+    if (!u) return "用户不存在";
+    const cleanName = sanitizeName(name);
+    if (!cleanName) return "昵称不能为空";
+    u.name = cleanName;
+    saveRaw(store);
+    return null;
+  },
+
+  /**
+   * 删除用户，同时清除其对应的存档 / 快照。
+   * 若删除的是当前用户，则自动切换到剩余用户中最近创建的一个；
+   * 若删完最后一个用户，则重新初始化一个"访客"账号。
+   * 返回新的 currentId。
+   */
+  remove(id) {
+    const store = loadRaw();
+    const idx = store.users.findIndex((u) => u.id === id);
+    if (idx === -1) return store.currentId;
+    store.users.splice(idx, 1);
+    // 清理该用户的分区存档
+    try {
+      localStorage.removeItem(`neondrift.save.v1:${id}`);
+      localStorage.removeItem(`neondrift.run.v1:${id}`);
+    } catch (_e) { /* ignore */ }
+
+    if (store.currentId === id) {
+      store.currentId = store.users.length
+        ? store.users.slice().sort((a, b) => b.createdAt - a.createdAt)[0].id
+        : "";
+    }
+    saveRaw(store);
+
+    if (!store.currentId) {
+      // 至少保留一个可用账号
+      return this.init().current.id;
+    }
+    return store.currentId;
+  },
+};
+
+Object.assign(exports, { Account });
+};
+
 __defs["/Users/fiona/Desktop/neon-survivors/js/core/AudioFx.js"] = function (exports, require) {
 /**
  * AudioFx.js — 基于 Web Audio API 的程序化音效合成器。
@@ -320,6 +514,7 @@ const {ParticleSystem} = require("/Users/fiona/Desktop/neon-survivors/js/core/Pa
 const {Pool} = require("/Users/fiona/Desktop/neon-survivors/js/core/Pool.js");
 const {SpatialGrid} = require("/Users/fiona/Desktop/neon-survivors/js/core/SpatialGrid.js");
 const {SaveData} = require("/Users/fiona/Desktop/neon-survivors/js/core/SaveData.js");
+const {Account} = require("/Users/fiona/Desktop/neon-survivors/js/core/Account.js");
 
 const {Player} = require("/Users/fiona/Desktop/neon-survivors/js/entities/Player.js");
 const {Enemy} = require("/Users/fiona/Desktop/neon-survivors/js/entities/Enemy.js");
@@ -375,7 +570,10 @@ class Game {
     this._runSaveTimer = 0;  // 对局快照自动保存节流计时
 
     // 元进度存档（跨局永久成长）
-    this.save = SaveData.load();
+    // Account 负责账号库 + 迁移旧无后缀存档; 每位玩家有独立分区 save/run。
+    const { current } = Account.init();
+    this.user = current;
+    this.save = SaveData.load(this.user.id);
 
     // 触摸设备：创建屏上暂停按钮（电脑端用 P/ESC）
     this.isTouch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
@@ -481,12 +679,12 @@ class Game {
   /** 落盘当前对局快照 */
   _captureRun() {
     if (!this.player.alive) return;
-    SaveData.saveRun(this._snapshotRun());
+    SaveData.saveRun(this.user.id, this._snapshotRun());
   }
 
   /** 从快照恢复对局并进入游戏（场上敌人重置，难度按存活时长延续） */
   _resumeRun() {
-    const rs = SaveData.loadRun();
+    const rs = SaveData.loadRun(this.user.id);
     if (!rs) { this.start(); return; }
     this.audio.init();
     this.player.reset();
@@ -534,7 +732,7 @@ class Game {
   start() {
     this.audio.init();
     // 开新的一局：丢弃旧的续玩快照
-    SaveData.clearRun();
+    SaveData.clearRun(this.user.id);
     // 重置全部状态
     this.player.reset();
     MetaProgression.applyTo(this.player, this.save); // 注入永久加成
@@ -564,13 +762,68 @@ class Game {
   _showMenu() {
     this.state = GameState.MENU;
     this._showPauseBtn(false);
-    const hasRun = !!SaveData.loadRun(); // 存在有效续玩快照时展示「继续上局」
-    this.screens.showMenu(this.save, {
+    const hasRun = !!SaveData.loadRun(this.user.id); // 存在有效续玩快照时展示「继续上局」
+    this.screens.showMenu(this.save, this.user, {
       onStart: () => this.start(),
       onResume: hasRun ? () => this._resumeRun() : null,
       onShop: () => this._openShop(),
       onHangar: () => this._openHangar(),
+      onAccount: () => this._openAccount(),
     });
+  }
+
+  /**
+   * 打开玩家管理界面：切换 / 创建 / 重命名 / 删除。
+   * 切换或删除当前用户后会重载存档并回到主菜单。
+   */
+  _openAccount() {
+    this.audio.init();
+    this.state = GameState.MENU; // 复用 MENU 状态即可, 不需要单独的 state
+    this._showPauseBtn(false);
+    const render = () => {
+      this.screens.showAccount(this.user.id, {
+        onSwitch: (id) => {
+          if (Account.switchTo(id)) {
+            this._reloadForUser(id);
+          }
+        },
+        onCreate: ({ name }) => {
+          const res = Account.create({ name });
+          if (!res.ok) return res.error;
+          this._reloadForUser(res.user.id);
+          return null;
+        },
+        onRename: (id, name) => {
+          const err = Account.rename(id, name);
+          if (!err && id === this.user.id) this.user = Account.current();
+          if (!err) render(); // 刷新界面显示新昵称
+          return err;
+        },
+        onDelete: (id) => {
+          const nextId = Account.remove(id);
+          this._reloadForUser(nextId);
+        },
+        onBack: () => this._showMenu(),
+      });
+    };
+    render();
+  }
+
+  /** 切换到指定用户: 重载 save/run, 场上实体清空, 返回菜单 */
+  _reloadForUser(userId) {
+    // 若在游戏中切换用户, 先落盘并清理场上状态
+    this._enemyPool.clear();
+    this._projPool.clear();
+    this._ebPool.clear();
+    this._gemPool.clear();
+    this.particles.clear();
+    this.bosses = [];
+    this.beams.length = 0;
+
+    Account.switchTo(userId); // 幂等: 已是当前则忽略
+    this.user = Account.current();
+    this.save = SaveData.load(this.user.id);
+    this._showMenu();
   }
 
   /** 打开机库（外观选择 + 抽卡） */
@@ -581,15 +834,15 @@ class Game {
     this.screens.showHangar(this.save, {
       onSelect: (id) => {
         if (Skins.select(this.save, id)) {
-          SaveData.save(this.save);
+          SaveData.save(this.user.id, this.save);
           this.audio.pickup();
         }
-        this._openHangar(); // 刷新选中态
+        // 无需重建机库: showHangar 内部已做局部 DOM 切换, 避免整页重绘的闪动
       },
       onDraw: (count) => {
         const results = this._drawGacha(count);
         if (results) {
-          SaveData.save(this.save);
+          SaveData.save(this.user.id, this.save);
           this.audio.levelup();
           this.screens.showGachaResult(this.save, results, () => this._openHangar());
         }
@@ -597,7 +850,7 @@ class Game {
       onFreeDraw: () => {
         const res = Skins.freeDraw(this.save);
         if (res) {
-          SaveData.save(this.save);
+          SaveData.save(this.user.id, this.save);
           this.audio.levelup();
           this.screens.showGachaResult(this.save, [res], () => this._openHangar());
         }
@@ -627,7 +880,7 @@ class Game {
     this.screens.showShop(this.save, {
       onBuy: (id) => {
         if (MetaProgression.buy(this.save, id)) {
-          SaveData.save(this.save);
+          SaveData.save(this.user.id, this.save);
           this.audio.pickup();
         }
         this._openShop(); // 刷新界面
@@ -649,7 +902,7 @@ class Game {
   _quitRun() {
     this.state = GameState.MENU;
     this._showPauseBtn(false);
-    SaveData.clearRun();
+    SaveData.clearRun(this.user.id);
     this._showMenu();
   }
 
@@ -897,7 +1150,7 @@ class Game {
   _gameOver() {
     this.state = GameState.GAMEOVER;
     this._showPauseBtn(false);
-    SaveData.clearRun(); // 本局结束，清除续玩快照
+    SaveData.clearRun(this.user.id); // 本局结束，清除续玩快照
     this.audio.gameover();
     this.camera.shake(30);
     this.particles.burst(this.player.x, this.player.y, "#00f0ff", 60, 500, 5, 1.2);
@@ -923,7 +1176,7 @@ class Game {
     this.save.totals.kills += this.stats.kills;
     this.save.totals.bossKills += this.stats.bossKills;
     this.save.totals.cores += reward;
-    SaveData.save(this.save);
+    SaveData.save(this.user.id, this.save);
 
     setTimeout(() => this.screens.showGameOver(this.stats, { reward, shardReward, records, save: this.save }, {
       onRestart: () => this.start(),
@@ -1418,11 +1671,18 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/core/SaveData.js"] = function (ex
  * SaveData.js — 本地存档（localStorage）。
  * 负责元进度数据的持久化：货币、永久升级等级、历史最佳、累计统计。
  *
+ * 分区策略：所有 key 会追加 `:${userId}`，实现「同一浏览器多账号」隔离；
+ * userId 由 Account.js 维护，未来也用作 EdgeOne KV 的存储 key。
+ *
  * 安全：读取时使用安全的 JSON 解析并与默认结构合并 + 数值校验，
  * 避免被篡改/损坏的存档导致运行异常（不使用 eval / 反序列化任意对象）。
  */
-const KEY = "neondrift.save.v1";
-const RUN_KEY = "neondrift.run.v1"; // 当前进行中的一局快照（用于「继续上局」）
+const KEY_PREFIX = "neondrift.save.v1";
+const RUN_KEY_PREFIX = "neondrift.run.v1"; // 当前进行中的一局快照（用于「继续上局」）
+
+// 分区 key 拼装。userId 由 Account 保证符合 [A-Za-z0-9_-]，可安全用于 key。
+function keyOf(userId) { return `${KEY_PREFIX}:${userId}`; }
+function runKeyOf(userId) { return `${RUN_KEY_PREFIX}:${userId}`; }
 
 function defaults() {
   return {
@@ -1447,10 +1707,11 @@ function num(v, fallback = 0) {
 }
 
 const SaveData = {
-  load() {
+  load(userId) {
     const d = defaults();
+    if (!userId) return d;
     try {
-      const raw = localStorage.getItem(KEY);
+      const raw = localStorage.getItem(keyOf(userId));
       if (!raw) return d;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") return d;
@@ -1500,25 +1761,29 @@ const SaveData = {
     return d;
   },
 
-  save(data) {
+  save(userId, data) {
+    if (!userId) return;
     try {
-      localStorage.setItem(KEY, JSON.stringify(data));
+      localStorage.setItem(keyOf(userId), JSON.stringify(data));
     } catch (_e) {
       // localStorage 不可用（隐私模式/超额）时静默降级
     }
   },
 
-  reset() {
-    try { localStorage.removeItem(KEY); } catch (_e) { /* ignore */ }
+  reset(userId) {
+    if (userId) {
+      try { localStorage.removeItem(keyOf(userId)); } catch (_e) { /* ignore */ }
+    }
     return defaults();
   },
 
   // ---------------- 进行中的一局快照 ----------------
 
   /** 保存当前对局快照，便于下次打开时「继续上局」（数据由 Game 组织，均为纯 JSON） */
-  saveRun(run) {
+  saveRun(userId, run) {
+    if (!userId) return;
     try {
-      localStorage.setItem(RUN_KEY, JSON.stringify(run));
+      localStorage.setItem(runKeyOf(userId), JSON.stringify(run));
     } catch (_e) {
       // localStorage 不可用时静默降级
     }
@@ -1528,9 +1793,10 @@ const SaveData = {
    * 读取对局快照。安全解析：仅接受结构完整、玩家仍存活的快照，
    * 否则返回 null（不使用 eval / 不信任任意结构）。
    */
-  loadRun() {
+  loadRun(userId) {
+    if (!userId) return null;
     try {
-      const raw = localStorage.getItem(RUN_KEY);
+      const raw = localStorage.getItem(runKeyOf(userId));
       if (!raw) return null;
       const r = JSON.parse(raw);
       if (!r || typeof r !== "object") return null;
@@ -1545,8 +1811,9 @@ const SaveData = {
     }
   },
 
-  clearRun() {
-    try { localStorage.removeItem(RUN_KEY); } catch (_e) { /* ignore */ }
+  clearRun(userId) {
+    if (!userId) return;
+    try { localStorage.removeItem(runKeyOf(userId)); } catch (_e) { /* ignore */ }
   },
 };
 
@@ -3656,6 +3923,14 @@ const {formatTime} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.
 const {UpgradeSystem} = require("/Users/fiona/Desktop/neon-survivors/js/systems/UpgradeSystem.js");
 const {MetaProgression} = require("/Users/fiona/Desktop/neon-survivors/js/systems/MetaProgression.js");
 const {Skins, RARITY, MAX_STAR} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
+const {Account} = require("/Users/fiona/Desktop/neon-survivors/js/core/Account.js");
+
+/** HTML 转义：防止用户输入的昵称 / ID 破坏 DOM 结构或注入脚本 */
+function esc(str) {
+  return String(str).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
 
 class Screens {
   constructor(root) {
@@ -3694,13 +3969,22 @@ class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, { onStart, onResume, onShop, onHangar }) {
+  showMenu(save, user, { onStart, onResume, onShop, onHangar, onAccount }) {
     this.clear();
     const b = save.best;
     const resumeBtn = onResume
       ? `<button class="btn" id="btn-resume">↩ 继续上局</button>`
       : "";
+    const userBar = user
+      ? `
+      <div class="user-bar" id="user-bar" title="点击切换或管理玩家">
+        <span class="user-ic">👤</span>
+        <span class="user-name">${esc(user.name)}</span>
+        <span class="user-switch">切换 ▸</span>
+      </div>`
+      : "";
     const el = this._make(`
+      ${userBar}
       <div class="sub">ROGUELITE · SURVIVOR · 霓虹幸存者</div>
       <h1 class="neon-title">NEON DRIFT</h1>
       <div class="cores-balance">
@@ -3729,6 +4013,10 @@ class Screens {
     el.querySelector("#btn-shop").addEventListener("click", onShop);
     el.querySelector("#btn-hangar").addEventListener("click", onHangar);
     if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
+    if (onAccount) {
+      const bar = el.querySelector("#user-bar");
+      if (bar) bar.addEventListener("click", onAccount);
+    }
   }
 
   /** 强化实验室：花费核心购买永久升级 */
@@ -3848,7 +4136,7 @@ class Screens {
         <button class="btn" id="btn-restart">↻ 再来一局</button>
         <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
-        <button class="btn btn-3" id="btn-menu">主菜单</button>
+        <button class="btn btn-2" id="btn-menu">主菜单</button>
       </div>
     `);
     this.root.appendChild(el);
@@ -3901,6 +4189,24 @@ class Screens {
       <div class="hint">每天可免费抽一次 · 重复抽取升星强化专属特性 · 满星后返还棱牌</div>
     `, "hangar-screen");
     const grid = el.querySelector(".skin-grid");
+    // 装备切换 -> 只改按钮 textContent + classList, DOM 结构 0 变化.
+    // (避免 innerHTML 替换在 backdrop-filter 背板上触发整屏重绘导致的闪动)
+    const applyEquipState = (card, isSel) => {
+      card.classList.toggle("selected", isSel);
+      const btn = card.querySelector(".skin-select");
+      if (!btn) return;
+      btn.textContent = isSel ? "已装备" : "装备";
+      btn.classList.toggle("equipped", isSel);
+      btn.disabled = isSel;
+    };
+    const equipSkin = (skinId) => {
+      const next = grid.querySelector(`.skin-card[data-skin-id="${skinId}"]`);
+      if (!next || next.classList.contains("selected")) return;
+      const prev = grid.querySelector(".skin-card.selected");
+      if (prev) applyEquipState(prev, false);
+      applyEquipState(next, true);
+      onSelect(skinId);
+    };
     for (const skin of Skins.list()) {
       const rar = RARITY[skin.rarity];
       const star = Skins.starOf(save, skin.id);
@@ -3908,30 +4214,22 @@ class Screens {
       const isSel = owned && skin.id === selected;
       const card = document.createElement("div");
       card.className = `skin-card rar-${skin.rarity}${owned ? "" : " locked"}${isSel ? " selected" : ""}`;
+      card.dataset.skinId = skin.id;
       card.style.setProperty("--accent", rar.color);
+      const actionHTML = owned
+        ? `<button class="skin-select${isSel ? " equipped" : ""}" type="button"${isSel ? " disabled" : ""}>${isSel ? "已装备" : "装备"}</button>`
+        : `<span class="skin-lockicon">🔒</span>`;
       card.innerHTML = `
         <div class="skin-rar" style="color:${rar.color}">${rar.name}</div>
         <canvas class="skin-canvas" width="120" height="120"></canvas>
         <div class="skin-name">${owned ? skin.name : "？？？"}</div>
         <div class="skin-stars" style="color:${rar.color}">${owned ? this._stars(star) : this._stars(0)}</div>
         <div class="skin-perk">${owned ? skin.perkText(Math.max(1, star)) : "未解锁 · 抽卡获取"}</div>
-        <div class="skin-action"></div>
+        <div class="skin-action">${actionHTML}</div>
       `;
-      const canvas = card.querySelector(".skin-canvas");
-      this._drawSkinPreview(canvas, skin, owned ? skin.accent : "#3a4356");
-      const action = card.querySelector(".skin-action");
+      this._drawSkinPreview(card.querySelector(".skin-canvas"), skin, owned ? skin.accent : "#3a4356");
       if (owned) {
-        if (isSel) {
-          action.innerHTML = `<span class="skin-equipped">已装备</span>`;
-        } else {
-          const btn = document.createElement("button");
-          btn.className = "skin-select";
-          btn.textContent = "装备";
-          btn.addEventListener("click", () => onSelect(skin.id));
-          action.appendChild(btn);
-        }
-      } else {
-        action.innerHTML = `<span class="skin-lockicon">🔒</span>`;
+        card.querySelector(".skin-select").addEventListener("click", () => equipSkin(skin.id));
       }
       grid.appendChild(card);
     }
@@ -3979,6 +4277,92 @@ class Screens {
     });
     this.root.appendChild(el);
     el.querySelector("#btn-close").addEventListener("click", onClose);
+  }
+
+  // ---------------- 账号管理 ----------------
+
+  /**
+   * 用户管理界面：切换 / 创建 / 重命名 / 删除。
+   * 所有变更通过回调回传给上层（Game）落盘。
+   */
+  showAccount(currentId, { onSwitch, onCreate, onRename, onDelete, onBack }) {
+    this.clear();
+    const el = this._make(`
+      <div class="sub">PILOT REGISTRY · 玩家档案</div>
+      <h2 class="neon-title">选择玩家</h2>
+      <div class="hint">同一浏览器可保存多份进度; ID 由系统自动分配, 也是未来云端存档 / 排行榜的账号标识</div>
+
+      <div class="user-list"></div>
+
+      <div class="user-create">
+        <div class="uc-title">＋ 创建新玩家</div>
+        <div class="uc-row">
+          <label>昵称</label>
+          <input id="in-name" maxlength="${Account.NAME_MAX}" placeholder="例如：星穹指挥官" autocomplete="off" />
+        </div>
+        <div class="uc-error" id="uc-error"></div>
+        <button class="btn" id="btn-create">✦ 创建并使用</button>
+      </div>
+
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+    `, "account-screen");
+
+    const list = el.querySelector(".user-list");
+    const users = Account.list();
+    if (users.length === 0) {
+      list.innerHTML = `<div class="hint">尚无玩家档案</div>`;
+    } else {
+      for (const u of users) {
+        const isCur = u.id === currentId;
+        const row = document.createElement("div");
+        row.className = `user-row${isCur ? " current" : ""}`;
+        row.innerHTML = `
+          <div class="ur-info">
+            <div class="ur-name">${esc(u.name)}${isCur ? ' <span class="ur-tag">当前</span>' : ""}</div>
+            <div class="ur-id">#${esc(u.id)}</div>
+          </div>
+          <div class="ur-actions">
+            ${isCur ? "" : `<button class="ur-btn ur-use">使用</button>`}
+            <button class="ur-btn ur-rename">重命名</button>
+            <button class="ur-btn ur-del">删除</button>
+          </div>
+        `;
+        const useBtn = row.querySelector(".ur-use");
+        if (useBtn) useBtn.addEventListener("click", () => onSwitch(u.id));
+
+        row.querySelector(".ur-rename").addEventListener("click", () => {
+          // 使用 prompt 保持零依赖；输入会经过 Account.rename 内部清洗
+          const next = window.prompt("新昵称", u.name);
+          if (next != null) {
+            const err = onRename(u.id, next);
+            if (err) window.alert(err);
+          }
+        });
+        row.querySelector(".ur-del").addEventListener("click", () => {
+          // 二次确认，避免误删除
+          if (window.confirm(`确定删除玩家「${u.name}」? 该玩家的存档、进度、外观都会被清除, 无法恢复。`)) {
+            onDelete(u.id);
+          }
+        });
+        list.appendChild(row);
+      }
+    }
+
+    const nameIn = el.querySelector("#in-name");
+    const errBox = el.querySelector("#uc-error");
+    const showErr = (msg) => { errBox.textContent = msg || ""; };
+    el.querySelector("#btn-create").addEventListener("click", () => {
+      showErr("");
+      const err = onCreate({ name: nameIn.value });
+      if (err) showErr(err);
+    });
+    // 回车触发创建, 提升键盘用户体验
+    nameIn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); el.querySelector("#btn-create").click(); }
+    });
+
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+    this.root.appendChild(el);
   }
 }
 

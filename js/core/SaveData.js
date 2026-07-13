@@ -2,11 +2,18 @@
  * SaveData.js — 本地存档（localStorage）。
  * 负责元进度数据的持久化：货币、永久升级等级、历史最佳、累计统计。
  *
+ * 分区策略：所有 key 会追加 `:${userId}`，实现「同一浏览器多账号」隔离；
+ * userId 由 Account.js 维护，未来也用作 EdgeOne KV 的存储 key。
+ *
  * 安全：读取时使用安全的 JSON 解析并与默认结构合并 + 数值校验，
  * 避免被篡改/损坏的存档导致运行异常（不使用 eval / 反序列化任意对象）。
  */
-const KEY = "neondrift.save.v1";
-const RUN_KEY = "neondrift.run.v1"; // 当前进行中的一局快照（用于「继续上局」）
+const KEY_PREFIX = "neondrift.save.v1";
+const RUN_KEY_PREFIX = "neondrift.run.v1"; // 当前进行中的一局快照（用于「继续上局」）
+
+// 分区 key 拼装。userId 由 Account 保证符合 [A-Za-z0-9_-]，可安全用于 key。
+function keyOf(userId) { return `${KEY_PREFIX}:${userId}`; }
+function runKeyOf(userId) { return `${RUN_KEY_PREFIX}:${userId}`; }
 
 function defaults() {
   return {
@@ -31,10 +38,11 @@ function num(v, fallback = 0) {
 }
 
 export const SaveData = {
-  load() {
+  load(userId) {
     const d = defaults();
+    if (!userId) return d;
     try {
-      const raw = localStorage.getItem(KEY);
+      const raw = localStorage.getItem(keyOf(userId));
       if (!raw) return d;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") return d;
@@ -84,25 +92,29 @@ export const SaveData = {
     return d;
   },
 
-  save(data) {
+  save(userId, data) {
+    if (!userId) return;
     try {
-      localStorage.setItem(KEY, JSON.stringify(data));
+      localStorage.setItem(keyOf(userId), JSON.stringify(data));
     } catch (_e) {
       // localStorage 不可用（隐私模式/超额）时静默降级
     }
   },
 
-  reset() {
-    try { localStorage.removeItem(KEY); } catch (_e) { /* ignore */ }
+  reset(userId) {
+    if (userId) {
+      try { localStorage.removeItem(keyOf(userId)); } catch (_e) { /* ignore */ }
+    }
     return defaults();
   },
 
   // ---------------- 进行中的一局快照 ----------------
 
   /** 保存当前对局快照，便于下次打开时「继续上局」（数据由 Game 组织，均为纯 JSON） */
-  saveRun(run) {
+  saveRun(userId, run) {
+    if (!userId) return;
     try {
-      localStorage.setItem(RUN_KEY, JSON.stringify(run));
+      localStorage.setItem(runKeyOf(userId), JSON.stringify(run));
     } catch (_e) {
       // localStorage 不可用时静默降级
     }
@@ -112,9 +124,10 @@ export const SaveData = {
    * 读取对局快照。安全解析：仅接受结构完整、玩家仍存活的快照，
    * 否则返回 null（不使用 eval / 不信任任意结构）。
    */
-  loadRun() {
+  loadRun(userId) {
+    if (!userId) return null;
     try {
-      const raw = localStorage.getItem(RUN_KEY);
+      const raw = localStorage.getItem(runKeyOf(userId));
       if (!raw) return null;
       const r = JSON.parse(raw);
       if (!r || typeof r !== "object") return null;
@@ -129,7 +142,8 @@ export const SaveData = {
     }
   },
 
-  clearRun() {
-    try { localStorage.removeItem(RUN_KEY); } catch (_e) { /* ignore */ }
+  clearRun(userId) {
+    if (!userId) return;
+    try { localStorage.removeItem(runKeyOf(userId)); } catch (_e) { /* ignore */ }
   },
 };

@@ -20,6 +20,7 @@ import { ParticleSystem } from "./ParticleSystem.js";
 import { Pool } from "./Pool.js";
 import { SpatialGrid } from "./SpatialGrid.js";
 import { SaveData } from "./SaveData.js";
+import { Account } from "./Account.js";
 
 import { Player } from "../entities/Player.js";
 import { Enemy } from "../entities/Enemy.js";
@@ -75,7 +76,10 @@ export class Game {
     this._runSaveTimer = 0;  // 对局快照自动保存节流计时
 
     // 元进度存档（跨局永久成长）
-    this.save = SaveData.load();
+    // Account 负责账号库 + 迁移旧无后缀存档; 每位玩家有独立分区 save/run。
+    const { current } = Account.init();
+    this.user = current;
+    this.save = SaveData.load(this.user.id);
 
     // 触摸设备：创建屏上暂停按钮（电脑端用 P/ESC）
     this.isTouch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
@@ -181,12 +185,12 @@ export class Game {
   /** 落盘当前对局快照 */
   _captureRun() {
     if (!this.player.alive) return;
-    SaveData.saveRun(this._snapshotRun());
+    SaveData.saveRun(this.user.id, this._snapshotRun());
   }
 
   /** 从快照恢复对局并进入游戏（场上敌人重置，难度按存活时长延续） */
   _resumeRun() {
-    const rs = SaveData.loadRun();
+    const rs = SaveData.loadRun(this.user.id);
     if (!rs) { this.start(); return; }
     this.audio.init();
     this.player.reset();
@@ -234,7 +238,7 @@ export class Game {
   start() {
     this.audio.init();
     // 开新的一局：丢弃旧的续玩快照
-    SaveData.clearRun();
+    SaveData.clearRun(this.user.id);
     // 重置全部状态
     this.player.reset();
     MetaProgression.applyTo(this.player, this.save); // 注入永久加成
@@ -264,13 +268,68 @@ export class Game {
   _showMenu() {
     this.state = GameState.MENU;
     this._showPauseBtn(false);
-    const hasRun = !!SaveData.loadRun(); // 存在有效续玩快照时展示「继续上局」
-    this.screens.showMenu(this.save, {
+    const hasRun = !!SaveData.loadRun(this.user.id); // 存在有效续玩快照时展示「继续上局」
+    this.screens.showMenu(this.save, this.user, {
       onStart: () => this.start(),
       onResume: hasRun ? () => this._resumeRun() : null,
       onShop: () => this._openShop(),
       onHangar: () => this._openHangar(),
+      onAccount: () => this._openAccount(),
     });
+  }
+
+  /**
+   * 打开玩家管理界面：切换 / 创建 / 重命名 / 删除。
+   * 切换或删除当前用户后会重载存档并回到主菜单。
+   */
+  _openAccount() {
+    this.audio.init();
+    this.state = GameState.MENU; // 复用 MENU 状态即可, 不需要单独的 state
+    this._showPauseBtn(false);
+    const render = () => {
+      this.screens.showAccount(this.user.id, {
+        onSwitch: (id) => {
+          if (Account.switchTo(id)) {
+            this._reloadForUser(id);
+          }
+        },
+        onCreate: ({ name }) => {
+          const res = Account.create({ name });
+          if (!res.ok) return res.error;
+          this._reloadForUser(res.user.id);
+          return null;
+        },
+        onRename: (id, name) => {
+          const err = Account.rename(id, name);
+          if (!err && id === this.user.id) this.user = Account.current();
+          if (!err) render(); // 刷新界面显示新昵称
+          return err;
+        },
+        onDelete: (id) => {
+          const nextId = Account.remove(id);
+          this._reloadForUser(nextId);
+        },
+        onBack: () => this._showMenu(),
+      });
+    };
+    render();
+  }
+
+  /** 切换到指定用户: 重载 save/run, 场上实体清空, 返回菜单 */
+  _reloadForUser(userId) {
+    // 若在游戏中切换用户, 先落盘并清理场上状态
+    this._enemyPool.clear();
+    this._projPool.clear();
+    this._ebPool.clear();
+    this._gemPool.clear();
+    this.particles.clear();
+    this.bosses = [];
+    this.beams.length = 0;
+
+    Account.switchTo(userId); // 幂等: 已是当前则忽略
+    this.user = Account.current();
+    this.save = SaveData.load(this.user.id);
+    this._showMenu();
   }
 
   /** 打开机库（外观选择 + 抽卡） */
@@ -281,15 +340,15 @@ export class Game {
     this.screens.showHangar(this.save, {
       onSelect: (id) => {
         if (Skins.select(this.save, id)) {
-          SaveData.save(this.save);
+          SaveData.save(this.user.id, this.save);
           this.audio.pickup();
         }
-        this._openHangar(); // 刷新选中态
+        // 无需重建机库: showHangar 内部已做局部 DOM 切换, 避免整页重绘的闪动
       },
       onDraw: (count) => {
         const results = this._drawGacha(count);
         if (results) {
-          SaveData.save(this.save);
+          SaveData.save(this.user.id, this.save);
           this.audio.levelup();
           this.screens.showGachaResult(this.save, results, () => this._openHangar());
         }
@@ -297,7 +356,7 @@ export class Game {
       onFreeDraw: () => {
         const res = Skins.freeDraw(this.save);
         if (res) {
-          SaveData.save(this.save);
+          SaveData.save(this.user.id, this.save);
           this.audio.levelup();
           this.screens.showGachaResult(this.save, [res], () => this._openHangar());
         }
@@ -327,7 +386,7 @@ export class Game {
     this.screens.showShop(this.save, {
       onBuy: (id) => {
         if (MetaProgression.buy(this.save, id)) {
-          SaveData.save(this.save);
+          SaveData.save(this.user.id, this.save);
           this.audio.pickup();
         }
         this._openShop(); // 刷新界面
@@ -349,7 +408,7 @@ export class Game {
   _quitRun() {
     this.state = GameState.MENU;
     this._showPauseBtn(false);
-    SaveData.clearRun();
+    SaveData.clearRun(this.user.id);
     this._showMenu();
   }
 
@@ -597,7 +656,7 @@ export class Game {
   _gameOver() {
     this.state = GameState.GAMEOVER;
     this._showPauseBtn(false);
-    SaveData.clearRun(); // 本局结束，清除续玩快照
+    SaveData.clearRun(this.user.id); // 本局结束，清除续玩快照
     this.audio.gameover();
     this.camera.shake(30);
     this.particles.burst(this.player.x, this.player.y, "#00f0ff", 60, 500, 5, 1.2);
@@ -623,7 +682,7 @@ export class Game {
     this.save.totals.kills += this.stats.kills;
     this.save.totals.bossKills += this.stats.bossKills;
     this.save.totals.cores += reward;
-    SaveData.save(this.save);
+    SaveData.save(this.user.id, this.save);
 
     setTimeout(() => this.screens.showGameOver(this.stats, { reward, shardReward, records, save: this.save }, {
       onRestart: () => this.start(),
