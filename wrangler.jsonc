@@ -1,0 +1,16 @@
+{
+	// Cloudflare Pages 项目配置(含 Functions 的 D1 绑定)。
+	// 使用 Pages: 前端静态产物在 dist/, 后端 Serverless 在 functions/ (自动路由到 /api/*)。
+	"name": "neon-survivors",
+	"compatibility_date": "2026-07-17",
+	// Pages 构建产物目录; 有此字段 Cloudflare 即按 Pages 项目对待本配置。
+	"pages_build_output_dir": "dist",
+	// D1 数据库绑定: functions 中通过 env.DB 访问。
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "neon-survivors-db",
+			"database_id": "170aaeff-2b57-4b90-bdc2-8bd63895df11"
+		}
+	]
+}
