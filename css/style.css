@@ -166,6 +166,7 @@ html, body {
 .screen.shop-screen,
 .screen.codex-screen,
 .screen.cloud-screen,
+.screen.campaign-screen,
 .screen.rank-screen { backdrop-filter: none; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -352,6 +353,9 @@ html, body {
 /* 图鉴按钮: 琥珀橙, 与"开始游戏"(青)/机库(柠檬绿)/强化实验室(紫) 明显区分 */
 .btn.btn-codex { color: #ff8a3d; border-color: rgba(255, 138, 61, 0.45); background: rgba(255, 138, 61, 0.06); }
 .btn.btn-codex:hover { color: #fff; background: rgba(255, 138, 61, 0.18); box-shadow: 0 0 22px rgba(255, 138, 61, 0.6); }
+/* 闯关模式入口按钮: 天空蓝, 冷色 + 高明度, 与"开始游戏"(热品红) 冷暖对比最强 */
+.btn.btn-campaign { color: #5aa9ff; border-color: rgba(90, 169, 255, 0.5); background: rgba(90, 169, 255, 0.07); letter-spacing: 2px; }
+.btn.btn-campaign:hover { color: #fff; background: rgba(90, 169, 255, 0.22); box-shadow: 0 0 24px rgba(90, 169, 255, 0.6); }
 /* 危险操作按钮（结束本局等）：暗红弱化，避免误当作主操作 */
 .btn.btn-quit { color: #ff6b7d; border-color: rgba(255, 107, 125, 0.4); background: rgba(255, 107, 125, 0.05); }
 .btn.btn-quit:hover { color: #fff; background: rgba(255, 107, 125, 0.16); box-shadow: 0 0 22px rgba(255, 107, 125, 0.5); }
@@ -817,8 +821,9 @@ html, body {
 }
 
 /* ---------- 菜单：云同步 / 排行榜入口按钮配色 ---------- */
-.btn.btn-sync { color: var(--neon-cyan); border-color: rgba(0, 240, 255, 0.4); background: rgba(0, 240, 255, 0.06); }
-.btn.btn-sync:hover { color: #fff; background: rgba(0, 240, 255, 0.16); box-shadow: 0 0 22px rgba(0, 240, 255, 0.55); }
+/* 云同步: teal 蓝绿, 与"重新开始"(纯青)拉开色相, 避免同排"蓝色感"扎堆 */
+.btn.btn-sync { color: #3ad2c2; border-color: rgba(58, 210, 194, 0.45); background: rgba(58, 210, 194, 0.06); }
+.btn.btn-sync:hover { color: #fff; background: rgba(58, 210, 194, 0.18); box-shadow: 0 0 22px rgba(58, 210, 194, 0.55); }
 .btn.btn-rank { color: #ffd23f; border-color: rgba(255, 210, 63, 0.45); background: rgba(255, 210, 63, 0.06); }
 .btn.btn-rank:hover { color: #fff; background: rgba(255, 210, 63, 0.18); box-shadow: 0 0 22px rgba(255, 210, 63, 0.6); }
 
@@ -911,3 +916,77 @@ html, body {
 .rank-row.top { border-color: rgba(255, 210, 63, 0.4); }
 .rank-row.top .rank-pos { color: #ffd23f; font-size: 18px; }
 .rank-row.rank-1 { border-color: rgba(255, 210, 63, 0.6); box-shadow: 0 0 16px rgba(255, 210, 63, 0.25); }
+
+/* ---------- 闯关模式：选关界面 ---------- */
+.screen.campaign-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 16px; }
+.campaign-list { display: flex; flex-direction: column; gap: 20px; width: min(96vw, 720px); }
+
+/* 章节容器: 用 --glow 作为主题强调色, 上锁章节整体降透明 */
+.chapter {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid var(--glow, #00f0ff);
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: rgba(10, 14, 30, 0.5);
+}
+.chapter.chapter-locked { opacity: 0.55; }
+.chapter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.chapter-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.chapter-idx { font-family: var(--mono); font-size: 13px; font-weight: 800; color: var(--glow, #00f0ff); letter-spacing: 0.1em; }
+.chapter-name { font-size: 20px; font-weight: 800; color: #fff; }
+.chapter-sub { font-family: var(--mono); font-size: 11px; color: #7d93b4; letter-spacing: 0.14em; }
+.chapter-prog { font-family: var(--mono); font-size: 14px; font-weight: 700; color: #ffd23f; }
+.chapter.chapter-locked .chapter-prog { color: #8fa9c8; }
+.chapter-intro { font-size: 12.5px; color: #9fb4d2; line-height: 1.6; margin: 8px 0 12px; }
+
+/* 关卡卡片网格 */
+.lvl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.lvl-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(6, 10, 22, 0.7);
+  color: #e8f6ff;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.lvl-card:not(:disabled):hover {
+  transform: translateY(-2px);
+  border-color: var(--glow, #00f0ff);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--glow, #00f0ff) 45%, transparent);
+}
+.lvl-card:disabled { cursor: not-allowed; opacity: 0.5; }
+.lvl-card.lvl-cleared { border-color: color-mix(in srgb, var(--glow, #00f0ff) 55%, transparent); }
+.lvl-id { font-family: var(--mono); font-size: 12px; font-weight: 800; color: var(--glow, #00f0ff); letter-spacing: 0.08em; }
+.lvl-badge { font-size: 22px; line-height: 1; }
+.lvl-name { font-size: 14px; font-weight: 700; color: #fff; text-align: center; }
+.lvl-stars { font-family: var(--mono); font-size: 16px; color: #ffd23f; letter-spacing: 2px; }
+.lvl-soon { font-family: var(--mono); font-size: 12px; color: #7d93b4; }
+.lvl-card.lvl-coming .lvl-name { color: #7d93b4; }
+
+/* ---------- 闯关模式：关卡结算界面 ---------- */
+.screen.result-screen { gap: 14px; }
+.res-level { font-family: var(--mono); font-size: 14px; color: #8fa9c8; letter-spacing: 0.08em; }
+.neon-title.res-win { color: var(--neon-lime); }
+.neon-title.res-fail { color: #ff6b7d; }
+.res-stars { font-size: 56px; color: #ffd23f; letter-spacing: 8px; text-shadow: 0 0 24px rgba(255, 210, 63, 0.6); }
+.res-stars.res-stars-fail { color: #4a5a72; text-shadow: none; }
+.res-new { font-family: var(--mono); font-size: 18px; font-weight: 800; color: #ffd23f; letter-spacing: 0.1em; animation: fadeIn 0.5s ease; }
+.res-best { font-family: var(--mono); font-size: 14px; color: #9fb4d2; }
+.res-tip { font-size: 14px; color: #9fb4d2; }
+.res-btns { margin-top: 8px; }
+
+/* 移动端: 关卡卡片仍保持三列(信息量小), 章节内边距收紧 */
+@media (max-width: 720px) {
+  .lvl-grid { gap: 8px; }
+  .lvl-card { padding: 12px 6px 10px; }
+  .lvl-name { font-size: 12.5px; }
+  .chapter { padding: 14px 12px; }
+  .res-stars { font-size: 46px; }
+}

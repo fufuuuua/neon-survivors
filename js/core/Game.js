@@ -22,6 +22,7 @@ import { SpatialGrid } from "./SpatialGrid.js";
 import { SaveData } from "./SaveData.js";
 import { Account } from "./Account.js";
 import { CloudSync } from "./CloudSync.js";
+import { LevelRunner } from "./LevelRunner.js";
 
 import { Player } from "../entities/Player.js";
 import { Enemy } from "../entities/Enemy.js";
@@ -34,6 +35,7 @@ import { UpgradeSystem } from "../systems/UpgradeSystem.js";
 import { MetaProgression } from "../systems/MetaProgression.js";
 import { Skins } from "../systems/Skins.js";
 import { Codex } from "../systems/Codex.js";
+import { Campaign } from "../systems/Campaign.js";
 
 import { HUD } from "../ui/HUD.js";
 import { Screens } from "../ui/Screens.js";
@@ -62,6 +64,7 @@ export class Game {
     // 系统
     this.spawnSystem = new SpawnSystem(this);
     this.collisionSystem = new CollisionSystem(this);
+    this.levelRunner = new LevelRunner(this); // 闯关模式关卡引擎
 
     // UI
     this.hud = new HUD();
@@ -169,6 +172,7 @@ export class Game {
       if (k === "p" || k === "escape") {
         if (this.state === GameState.PLAYING) this._pause();
         else if (this.state === GameState.PAUSED) this._resume();
+        else if (this.state === GameState.CAMPAIGN_PLAY) this.levelRunner.abort(); // 闯关中退出回选关
       }
       // 升级界面数字快捷键
       if (this.state === GameState.LEVELUP && ["1", "2", "3"].includes(k)) {
@@ -320,6 +324,7 @@ export class Game {
     this.screens.showMenu(this.save, this.user, {
       onStart: () => this.start(),
       onResume: hasRun ? () => this._resumeRun() : null,
+      onCampaign: () => this._openCampaign(),
       onShop: () => this._openShop(),
       onHangar: () => this._openHangar(),
       onCodex: () => this._openCodex(),
@@ -345,6 +350,65 @@ export class Game {
         return res;
       },
       onBack: () => this._showMenu(),
+    });
+  }
+
+  // ---------------- 闯关模式 ----------------
+
+  /** 打开闯关模式选关界面（章节 / 关卡 / 星星进度） */
+  _openCampaign() {
+    this.audio.init();
+    this.state = GameState.CAMPAIGN;
+    this._showPauseBtn(false);
+    this.screens.showCampaign(this.save, {
+      onPlay: (ci, li) => this._startLevel(ci, li),
+      onBack: () => this._showMenu(),
+    });
+  }
+
+  /** 开始某一闯关关卡：切到 CAMPAIGN_PLAY 状态，交给 LevelRunner 驱动 */
+  _startLevel(ci, li) {
+    const chapter = Campaign.chapter(ci);
+    const level = Campaign.level(ci, li);
+    if (!chapter || !level || Campaign.isComing(level)) return;
+    if (!Campaign.levelUnlocked(this.save, ci, li)) return;
+
+    this.audio.init();
+    this.screens.clear();
+    this._showPauseBtn(false);
+    this._curLevel = { ci, li };
+    this.state = GameState.CAMPAIGN_PLAY;
+    this.levelRunner.start(level, chapter.theme, (res) => this._onLevelEnd(res));
+  }
+
+  /**
+   * 关卡结束回调。result: "clear"|"fail"|"abort"。
+   * 通关记录最高星数并落盘，随后展示结算界面。
+   */
+  _onLevelEnd(res) {
+    const { ci, li } = this._curLevel || {};
+    const chapter = Campaign.chapter(ci);
+    const level = Campaign.level(ci, li);
+    if (!chapter || !level) { this._openCampaign(); return; }
+
+    if (res.result === "abort") { this._openCampaign(); return; }
+
+    let improved = false;
+    if (res.result === "clear") {
+      improved = Campaign.record(this.save, level.id, res.stars);
+      SaveData.save(this.user.id, this.save);
+    }
+
+    this.state = GameState.CAMPAIGN; // 结算界面复用选关状态
+    this._showPauseBtn(false);
+    const hasNext = !!Campaign.level(ci, li + 1) && !Campaign.isComing(Campaign.level(ci, li + 1));
+    this.screens.showLevelResult({
+      chapter, level, result: res.result, stars: res.stars,
+      best: Campaign.stars(this.save, level.id), improved, hasNext,
+    }, {
+      onRetry: () => this._startLevel(ci, li),
+      onNext: hasNext ? () => this._startLevel(ci, li + 1) : null,
+      onSelect: () => this._openCampaign(),
     });
   }
 
@@ -723,6 +787,7 @@ export class Game {
 
     // 游戏逻辑使用缩放后的时间（慢动作演出）
     if (this.state === GameState.PLAYING) this.update(rawDt * this.timeScale);
+    else if (this.state === GameState.CAMPAIGN_PLAY) this.levelRunner.update(rawDt);
 
     // 演出量用真实时间衰减/回归，不受慢动作影响
     if (this.flash > 0) this.flash = Math.max(0, this.flash - rawDt * 2.4);
@@ -859,6 +924,12 @@ export class Game {
   render() {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.viewW, this.viewH);
+
+    // 闯关模式由 LevelRunner 独立渲染整幅世界（专属地图/通道/终点/HUD），与生存模式互不干扰
+    if (this.state === GameState.CAMPAIGN_PLAY) {
+      this.levelRunner.render(ctx);
+      return;
+    }
 
     this.camera.begin(ctx);
     this._drawBackground(ctx);

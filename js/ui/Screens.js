@@ -7,6 +7,7 @@ import { UpgradeSystem } from "../systems/UpgradeSystem.js";
 import { MetaProgression } from "../systems/MetaProgression.js";
 import { Skins, RARITY, MAX_STAR } from "../systems/Skins.js";
 import { Codex } from "../systems/Codex.js";
+import { Campaign } from "../systems/Campaign.js";
 import { Account } from "../core/Account.js";
 
 /** HTML 转义：防止用户输入的昵称 / ID 破坏 DOM 结构或注入脚本 */
@@ -53,7 +54,7 @@ export class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, user, { onStart, onResume, onShop, onHangar, onCodex, onAccount, onCloud, onLeaderboard }) {
+  showMenu(save, user, { onStart, onResume, onCampaign, onShop, onHangar, onCodex, onAccount, onCloud, onLeaderboard }) {
     this.clear();
     const b = save.best;
     const userBar = user
@@ -72,12 +73,18 @@ export class Screens {
     //  · 开始游戏 -> 品红 (btn-primary, 与游戏主强调色一致)
     //  · 重新开始 -> 青 (btn-restart, 与"继续上局"区分, 视觉降级)
     //  · 继续上局 -> 品红 (与开始游戏同级, 都是主行动)
+    // 有续玩存档时: 三按钮同排(继续上局=品红 / 重新开始=青 / 闯关=玫粉).
+    // 无续玩时: 首行 [开始游戏 + 闯关模式] 并列, 两个都是主入口.
     const primaryRow = onResume
       ? `
         <button class="btn btn-primary" id="btn-resume">↩ 继续上局</button>
         <button class="btn btn-restart" id="btn-start">▶ 重新开始</button>
+        <button class="btn btn-campaign" id="btn-campaign">◈ 闯关模式</button>
       `
-      : `<button class="btn btn-primary" id="btn-start">▶ 开始游戏</button>`;
+      : `
+        <button class="btn btn-primary" id="btn-start">▶ 开始游戏</button>
+        <button class="btn btn-campaign" id="btn-campaign">◈ 闯关模式</button>
+      `;
     const el = this._make(`
       ${userBar}
       <div class="sub">ROGUELITE · SURVIVOR · 霓虹幸存者</div>
@@ -112,6 +119,7 @@ export class Screens {
     el.querySelector("#btn-shop").addEventListener("click", onShop);
     el.querySelector("#btn-hangar").addEventListener("click", onHangar);
     if (onCodex) el.querySelector("#btn-codex").addEventListener("click", onCodex);
+    if (onCampaign) el.querySelector("#btn-campaign").addEventListener("click", onCampaign);
     if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
     if (onCloud) el.querySelector("#btn-cloud").addEventListener("click", onCloud);
     if (onLeaderboard) el.querySelector("#btn-rank").addEventListener("click", onLeaderboard);
@@ -119,6 +127,132 @@ export class Screens {
       const bar = el.querySelector("#user-bar");
       if (bar) bar.addEventListener("click", onAccount);
     }
+  }
+
+  /** 星级点：已得实心 ★ / 未得空心 ☆，n<0 表示尚未通关 */
+  _starRow(n, total = 3) {
+    let s = "";
+    for (let i = 0; i < total; i++) s += i < n ? "★" : "☆";
+    return s;
+  }
+
+  /**
+   * 闯关模式选关界面：按章节列出关卡卡片，展示解锁状态与已得星数。
+   * onPlay(ci, li) 进入某关；onBack 返回主菜单。
+   */
+  showCampaign(save, { onPlay, onBack }) {
+    this.clear();
+    const chapters = Campaign.chapters();
+    const total = Campaign.totalStars(save);
+
+    const chapHTML = chapters.map((ch, ci) => {
+      const unlocked = Campaign.chapterUnlocked(save, ci);
+      const got = Campaign.chapterStars(save, ci);
+      const max = Campaign.chapterMaxStars(ci);
+      const c = ch.theme || {};
+      const glow = c.glow || "#00f0ff";
+      const lockHint = unlocked ? "" : `需上一章累计 ${ch.reqStars} ★ 解锁`;
+
+      const levelCards = ch.levels.map((lv, li) => {
+        const coming = Campaign.isComing(lv);
+        const lvUnlocked = !coming && Campaign.levelUnlocked(save, ci, li);
+        const stars = Campaign.stars(save, lv.id); // -1 未通关
+        const cleared = stars >= 0;
+        let cls = "lvl-card";
+        if (coming) cls += " lvl-coming";
+        else if (!lvUnlocked) cls += " lvl-locked";
+        else if (cleared) cls += " lvl-cleared";
+        const badge = coming ? "🚧" : (!lvUnlocked ? "🔒" : (cleared ? "✔" : "▶"));
+        const starsHTML = coming
+          ? `<span class="lvl-soon">敬请期待</span>`
+          : `<span class="lvl-stars">${this._starRow(stars)}</span>`;
+        return `
+          <button class="${cls}" data-ci="${ci}" data-li="${li}"
+            ${(coming || !lvUnlocked) ? "disabled" : ""}
+            style="--glow:${glow}">
+            <span class="lvl-id">${esc(lv.id)}</span>
+            <span class="lvl-badge">${badge}</span>
+            <span class="lvl-name">${esc(lv.name)}</span>
+            ${starsHTML}
+          </button>`;
+      }).join("");
+
+      return `
+        <div class="chapter ${unlocked ? "" : "chapter-locked"}" style="--glow:${glow}">
+          <div class="chapter-head">
+            <div class="chapter-title">
+              <span class="chapter-idx">CH.${ch.id}</span>
+              <span class="chapter-name">${esc(ch.name)}</span>
+              <span class="chapter-sub">${esc(ch.sub || "")}</span>
+            </div>
+            <div class="chapter-prog">${unlocked ? `★ ${got}/${max}` : `🔒 ${esc(lockHint)}`}</div>
+          </div>
+          <div class="chapter-intro">${esc(ch.intro || "")}</div>
+          <div class="lvl-grid">${levelCards}</div>
+        </div>`;
+    }).join("");
+
+    const el = this._make(`
+      <div class="sub">CAMPAIGN · 闯关模式</div>
+      <h2 class="neon-title">星轨试炼</h2>
+      <div class="cores-balance"><span class="cur-core-amt">★ ${total}</span> <span class="lbl">累计星星</span></div>
+      <div class="campaign-list">${chapHTML}</div>
+      <button class="btn" id="btn-back">← 返回</button>
+      <div class="hint">${this.isTouch
+        ? "拖动屏幕沿通道飞向终点 · 沿途收集能量星 · 别撞出通道"
+        : "移动: W A S D / 方向键 &nbsp;·&nbsp; 沿通道飞向终点 · 收集能量星 · P/ESC 退出"}</div>
+    `, "campaign-screen");
+    this.root.appendChild(el);
+
+    el.querySelectorAll(".lvl-card").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.addEventListener("click", () => {
+        const ci = parseInt(btn.dataset.ci, 10);
+        const li = parseInt(btn.dataset.li, 10);
+        onPlay(ci, li);
+      });
+    });
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+  }
+
+  /**
+   * 关卡结算界面。data: { chapter, level, result, stars, best, improved, hasNext }
+   * onRetry 重试本关；onNext 进入下一关(可空)；onSelect 返回选关。
+   */
+  showLevelResult(data, { onRetry, onNext, onSelect }) {
+    this.clear();
+    const { chapter, level, result, stars, best, improved, hasNext } = data;
+    const win = result === "clear";
+    const titleTxt = win ? "关卡通关" : "闯关失败";
+    const titleCls = win ? "res-win" : "res-fail";
+    const bigStars = win
+      ? `<div class="res-stars">${this._starRow(stars)}</div>`
+      : `<div class="res-stars res-stars-fail">☆☆☆</div>`;
+    const sub = win
+      ? (improved ? `<div class="res-new">★ 新纪录!</div>` : `<div class="res-best">历史最佳 ${this._starRow(Math.max(0, best))}</div>`)
+      : `<div class="res-tip">时间耗尽，未能抵达终点</div>`;
+
+    const nextBtn = (win && hasNext && onNext)
+      ? `<button class="btn btn-primary" id="btn-next">下一关 ▸</button>`
+      : "";
+
+    const el = this._make(`
+      <div class="sub">${esc(chapter ? chapter.name : "")}</div>
+      <div class="res-level">${esc(level ? level.id : "")} · ${esc(level ? level.name : "")}</div>
+      <h2 class="neon-title ${titleCls}">${titleTxt}</h2>
+      ${bigStars}
+      ${sub}
+      <div class="menu-btns res-btns">
+        ${nextBtn}
+        <button class="btn ${nextBtn ? "btn-restart" : "btn-primary"}" id="btn-retry">↺ 重试</button>
+        <button class="btn btn-3" id="btn-select">☰ 选关</button>
+      </div>
+    `, "result-screen");
+    this.root.appendChild(el);
+
+    if (nextBtn) el.querySelector("#btn-next").addEventListener("click", onNext);
+    el.querySelector("#btn-retry").addEventListener("click", onRetry);
+    el.querySelector("#btn-select").addEventListener("click", onSelect);
   }
 
   /** 强化实验室：花费核心购买永久升级 */

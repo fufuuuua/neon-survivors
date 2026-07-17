@@ -173,6 +173,7 @@ html, body {
 .screen.shop-screen,
 .screen.codex-screen,
 .screen.cloud-screen,
+.screen.campaign-screen,
 .screen.rank-screen { backdrop-filter: none; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -359,6 +360,9 @@ html, body {
 /* 图鉴按钮: 琥珀橙, 与"开始游戏"(青)/机库(柠檬绿)/强化实验室(紫) 明显区分 */
 .btn.btn-codex { color: #ff8a3d; border-color: rgba(255, 138, 61, 0.45); background: rgba(255, 138, 61, 0.06); }
 .btn.btn-codex:hover { color: #fff; background: rgba(255, 138, 61, 0.18); box-shadow: 0 0 22px rgba(255, 138, 61, 0.6); }
+/* 闯关模式入口按钮: 天空蓝, 冷色 + 高明度, 与"开始游戏"(热品红) 冷暖对比最强 */
+.btn.btn-campaign { color: #5aa9ff; border-color: rgba(90, 169, 255, 0.5); background: rgba(90, 169, 255, 0.07); letter-spacing: 2px; }
+.btn.btn-campaign:hover { color: #fff; background: rgba(90, 169, 255, 0.22); box-shadow: 0 0 24px rgba(90, 169, 255, 0.6); }
 /* 危险操作按钮（结束本局等）：暗红弱化，避免误当作主操作 */
 .btn.btn-quit { color: #ff6b7d; border-color: rgba(255, 107, 125, 0.4); background: rgba(255, 107, 125, 0.05); }
 .btn.btn-quit:hover { color: #fff; background: rgba(255, 107, 125, 0.16); box-shadow: 0 0 22px rgba(255, 107, 125, 0.5); }
@@ -824,8 +828,9 @@ html, body {
 }
 
 /* ---------- 菜单：云同步 / 排行榜入口按钮配色 ---------- */
-.btn.btn-sync { color: var(--neon-cyan); border-color: rgba(0, 240, 255, 0.4); background: rgba(0, 240, 255, 0.06); }
-.btn.btn-sync:hover { color: #fff; background: rgba(0, 240, 255, 0.16); box-shadow: 0 0 22px rgba(0, 240, 255, 0.55); }
+/* 云同步: teal 蓝绿, 与"重新开始"(纯青)拉开色相, 避免同排"蓝色感"扎堆 */
+.btn.btn-sync { color: #3ad2c2; border-color: rgba(58, 210, 194, 0.45); background: rgba(58, 210, 194, 0.06); }
+.btn.btn-sync:hover { color: #fff; background: rgba(58, 210, 194, 0.18); box-shadow: 0 0 22px rgba(58, 210, 194, 0.55); }
 .btn.btn-rank { color: #ffd23f; border-color: rgba(255, 210, 63, 0.45); background: rgba(255, 210, 63, 0.06); }
 .btn.btn-rank:hover { color: #fff; background: rgba(255, 210, 63, 0.18); box-shadow: 0 0 22px rgba(255, 210, 63, 0.6); }
 
@@ -918,6 +923,80 @@ html, body {
 .rank-row.top { border-color: rgba(255, 210, 63, 0.4); }
 .rank-row.top .rank-pos { color: #ffd23f; font-size: 18px; }
 .rank-row.rank-1 { border-color: rgba(255, 210, 63, 0.6); box-shadow: 0 0 16px rgba(255, 210, 63, 0.25); }
+
+/* ---------- 闯关模式：选关界面 ---------- */
+.screen.campaign-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 16px; }
+.campaign-list { display: flex; flex-direction: column; gap: 20px; width: min(96vw, 720px); }
+
+/* 章节容器: 用 --glow 作为主题强调色, 上锁章节整体降透明 */
+.chapter {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid var(--glow, #00f0ff);
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: rgba(10, 14, 30, 0.5);
+}
+.chapter.chapter-locked { opacity: 0.55; }
+.chapter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.chapter-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.chapter-idx { font-family: var(--mono); font-size: 13px; font-weight: 800; color: var(--glow, #00f0ff); letter-spacing: 0.1em; }
+.chapter-name { font-size: 20px; font-weight: 800; color: #fff; }
+.chapter-sub { font-family: var(--mono); font-size: 11px; color: #7d93b4; letter-spacing: 0.14em; }
+.chapter-prog { font-family: var(--mono); font-size: 14px; font-weight: 700; color: #ffd23f; }
+.chapter.chapter-locked .chapter-prog { color: #8fa9c8; }
+.chapter-intro { font-size: 12.5px; color: #9fb4d2; line-height: 1.6; margin: 8px 0 12px; }
+
+/* 关卡卡片网格 */
+.lvl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.lvl-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(6, 10, 22, 0.7);
+  color: #e8f6ff;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.lvl-card:not(:disabled):hover {
+  transform: translateY(-2px);
+  border-color: var(--glow, #00f0ff);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--glow, #00f0ff) 45%, transparent);
+}
+.lvl-card:disabled { cursor: not-allowed; opacity: 0.5; }
+.lvl-card.lvl-cleared { border-color: color-mix(in srgb, var(--glow, #00f0ff) 55%, transparent); }
+.lvl-id { font-family: var(--mono); font-size: 12px; font-weight: 800; color: var(--glow, #00f0ff); letter-spacing: 0.08em; }
+.lvl-badge { font-size: 22px; line-height: 1; }
+.lvl-name { font-size: 14px; font-weight: 700; color: #fff; text-align: center; }
+.lvl-stars { font-family: var(--mono); font-size: 16px; color: #ffd23f; letter-spacing: 2px; }
+.lvl-soon { font-family: var(--mono); font-size: 12px; color: #7d93b4; }
+.lvl-card.lvl-coming .lvl-name { color: #7d93b4; }
+
+/* ---------- 闯关模式：关卡结算界面 ---------- */
+.screen.result-screen { gap: 14px; }
+.res-level { font-family: var(--mono); font-size: 14px; color: #8fa9c8; letter-spacing: 0.08em; }
+.neon-title.res-win { color: var(--neon-lime); }
+.neon-title.res-fail { color: #ff6b7d; }
+.res-stars { font-size: 56px; color: #ffd23f; letter-spacing: 8px; text-shadow: 0 0 24px rgba(255, 210, 63, 0.6); }
+.res-stars.res-stars-fail { color: #4a5a72; text-shadow: none; }
+.res-new { font-family: var(--mono); font-size: 18px; font-weight: 800; color: #ffd23f; letter-spacing: 0.1em; animation: fadeIn 0.5s ease; }
+.res-best { font-family: var(--mono); font-size: 14px; color: #9fb4d2; }
+.res-tip { font-size: 14px; color: #9fb4d2; }
+.res-btns { margin-top: 8px; }
+
+/* 移动端: 关卡卡片仍保持三列(信息量小), 章节内边距收紧 */
+@media (max-width: 720px) {
+  .lvl-grid { gap: 8px; }
+  .lvl-card { padding: 12px 6px 10px; }
+  .lvl-name { font-size: 12.5px; }
+  .chapter { padding: 14px 12px; }
+  .res-stars { font-size: 46px; }
+}
 
 </style>
 </head>
@@ -1070,6 +1149,8 @@ const GameState = Object.freeze({
   GAMEOVER: "GAMEOVER",
   CLOUD: "CLOUD",           // 云同步界面(注册/找回/上传下载存档)
   LEADERBOARD: "LEADERBOARD", // 排行榜界面
+  CAMPAIGN: "CAMPAIGN",       // 闯关模式选关界面(章节/关卡)
+  CAMPAIGN_PLAY: "CAMPAIGN_PLAY", // 正在进行某一闯关关卡
 });
 
 Object.assign(exports, { CONFIG, GameState });
@@ -1596,6 +1677,7 @@ const {SpatialGrid} = require("/Users/fiona/Desktop/neon-survivors/js/core/Spati
 const {SaveData} = require("/Users/fiona/Desktop/neon-survivors/js/core/SaveData.js");
 const {Account} = require("/Users/fiona/Desktop/neon-survivors/js/core/Account.js");
 const {CloudSync} = require("/Users/fiona/Desktop/neon-survivors/js/core/CloudSync.js");
+const {LevelRunner} = require("/Users/fiona/Desktop/neon-survivors/js/core/LevelRunner.js");
 
 const {Player} = require("/Users/fiona/Desktop/neon-survivors/js/entities/Player.js");
 const {Enemy} = require("/Users/fiona/Desktop/neon-survivors/js/entities/Enemy.js");
@@ -1608,6 +1690,7 @@ const {UpgradeSystem} = require("/Users/fiona/Desktop/neon-survivors/js/systems/
 const {MetaProgression} = require("/Users/fiona/Desktop/neon-survivors/js/systems/MetaProgression.js");
 const {Skins} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
 const {Codex} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Codex.js");
+const {Campaign} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Campaign.js");
 
 const {HUD} = require("/Users/fiona/Desktop/neon-survivors/js/ui/HUD.js");
 const {Screens} = require("/Users/fiona/Desktop/neon-survivors/js/ui/Screens.js");
@@ -1636,6 +1719,7 @@ class Game {
     // 系统
     this.spawnSystem = new SpawnSystem(this);
     this.collisionSystem = new CollisionSystem(this);
+    this.levelRunner = new LevelRunner(this); // 闯关模式关卡引擎
 
     // UI
     this.hud = new HUD();
@@ -1743,6 +1827,7 @@ class Game {
       if (k === "p" || k === "escape") {
         if (this.state === GameState.PLAYING) this._pause();
         else if (this.state === GameState.PAUSED) this._resume();
+        else if (this.state === GameState.CAMPAIGN_PLAY) this.levelRunner.abort(); // 闯关中退出回选关
       }
       // 升级界面数字快捷键
       if (this.state === GameState.LEVELUP && ["1", "2", "3"].includes(k)) {
@@ -1894,6 +1979,7 @@ class Game {
     this.screens.showMenu(this.save, this.user, {
       onStart: () => this.start(),
       onResume: hasRun ? () => this._resumeRun() : null,
+      onCampaign: () => this._openCampaign(),
       onShop: () => this._openShop(),
       onHangar: () => this._openHangar(),
       onCodex: () => this._openCodex(),
@@ -1919,6 +2005,65 @@ class Game {
         return res;
       },
       onBack: () => this._showMenu(),
+    });
+  }
+
+  // ---------------- 闯关模式 ----------------
+
+  /** 打开闯关模式选关界面（章节 / 关卡 / 星星进度） */
+  _openCampaign() {
+    this.audio.init();
+    this.state = GameState.CAMPAIGN;
+    this._showPauseBtn(false);
+    this.screens.showCampaign(this.save, {
+      onPlay: (ci, li) => this._startLevel(ci, li),
+      onBack: () => this._showMenu(),
+    });
+  }
+
+  /** 开始某一闯关关卡：切到 CAMPAIGN_PLAY 状态，交给 LevelRunner 驱动 */
+  _startLevel(ci, li) {
+    const chapter = Campaign.chapter(ci);
+    const level = Campaign.level(ci, li);
+    if (!chapter || !level || Campaign.isComing(level)) return;
+    if (!Campaign.levelUnlocked(this.save, ci, li)) return;
+
+    this.audio.init();
+    this.screens.clear();
+    this._showPauseBtn(false);
+    this._curLevel = { ci, li };
+    this.state = GameState.CAMPAIGN_PLAY;
+    this.levelRunner.start(level, chapter.theme, (res) => this._onLevelEnd(res));
+  }
+
+  /**
+   * 关卡结束回调。result: "clear"|"fail"|"abort"。
+   * 通关记录最高星数并落盘，随后展示结算界面。
+   */
+  _onLevelEnd(res) {
+    const { ci, li } = this._curLevel || {};
+    const chapter = Campaign.chapter(ci);
+    const level = Campaign.level(ci, li);
+    if (!chapter || !level) { this._openCampaign(); return; }
+
+    if (res.result === "abort") { this._openCampaign(); return; }
+
+    let improved = false;
+    if (res.result === "clear") {
+      improved = Campaign.record(this.save, level.id, res.stars);
+      SaveData.save(this.user.id, this.save);
+    }
+
+    this.state = GameState.CAMPAIGN; // 结算界面复用选关状态
+    this._showPauseBtn(false);
+    const hasNext = !!Campaign.level(ci, li + 1) && !Campaign.isComing(Campaign.level(ci, li + 1));
+    this.screens.showLevelResult({
+      chapter, level, result: res.result, stars: res.stars,
+      best: Campaign.stars(this.save, level.id), improved, hasNext,
+    }, {
+      onRetry: () => this._startLevel(ci, li),
+      onNext: hasNext ? () => this._startLevel(ci, li + 1) : null,
+      onSelect: () => this._openCampaign(),
     });
   }
 
@@ -2297,6 +2442,7 @@ class Game {
 
     // 游戏逻辑使用缩放后的时间（慢动作演出）
     if (this.state === GameState.PLAYING) this.update(rawDt * this.timeScale);
+    else if (this.state === GameState.CAMPAIGN_PLAY) this.levelRunner.update(rawDt);
 
     // 演出量用真实时间衰减/回归，不受慢动作影响
     if (this.flash > 0) this.flash = Math.max(0, this.flash - rawDt * 2.4);
@@ -2433,6 +2579,12 @@ class Game {
   render() {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.viewW, this.viewH);
+
+    // 闯关模式由 LevelRunner 独立渲染整幅世界（专属地图/通道/终点/HUD），与生存模式互不干扰
+    if (this.state === GameState.CAMPAIGN_PLAY) {
+      this.levelRunner.render(ctx);
+      return;
+    }
 
     this.camera.begin(ctx);
     this._drawBackground(ctx);
@@ -2700,6 +2852,568 @@ class Input {
 Object.assign(exports, { Input });
 };
 
+__defs["/Users/fiona/Desktop/neon-survivors/js/core/LevelRunner.js"] = function (exports, require) {
+/**
+ * LevelRunner.js — 闯关模式「路线走廊(path)」关卡引擎。
+ *
+ * 玩法(第一章):
+ *  - 战机从世界下方出发, 沿一条带转折的霓虹通道向上突进, 抵达顶端终点即通关。
+ *  - 生命值 3 点(心形 HUD): 触碰墙壁 -1, 被敌人撞击 -1, 归零即失败。
+ *  - 走廊内会不断生成追击小怪, 玩家沿面朝方向自动射击, 需一边闪避一边清怪。
+ *  - 通道沿途散布 3 颗能量星, 拾取数量决定本关星级(0..3)。
+ *  - 有时间限制: 倒计时归零仍未抵达终点判定失败, 可重试。
+ *
+ * 与生存模式解耦: 复用 game.player 仅用于「造型渲染 + 引擎尾焰」, 移动/碰撞/射击/敌人 全部由本引擎驱动,
+ * 不触发任何武器/升级/Boss 逻辑, 也不动 Game 的对象池。相机复用 game.camera(边界即世界边界)。
+ */
+const {CONFIG} = require("/Users/fiona/Desktop/neon-survivors/js/config.js");
+const {Vector2} = require("/Users/fiona/Desktop/neon-survivors/js/utils/Vector2.js");
+const {TAU, clamp, rand} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.js");
+const {Skins} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
+
+const SPEED = 300;         // 闯关固定移速(不受皮肤/局外强化影响, 保证关卡平衡)
+const STAR_R = 30;         // 能量星拾取半径
+const FINISH_PAD = 10;     // 抵达终点的纵向判定余量
+
+// 生命值 / 受伤反馈
+const HP_MAX = 3;
+const INVULN_TIME = 1.1;   // 受击后的无敌帧, 避免贴墙/贴怪连续掉血
+
+// 玩家射击(自动开火, 沿面朝方向)
+const SHOOT_INTERVAL = 0.32;
+const BULLET_SPEED = 640;
+const BULLET_LIFE = 1.1;
+const BULLET_R = 5;
+
+// 敌人生成 / 属性
+const ENEMY_SPAWN_INTERVAL = 1.7;
+const ENEMY_R = 14;
+const ENEMY_SPEED = 150;
+const ENEMY_HP = 2;        // 需 2 发子弹击落, 保证战术压力
+
+class LevelRunner {
+  constructor(game) {
+    this.game = game;
+    this.active = false;
+    this._onEnd = null;
+  }
+
+  /**
+   * 开始一关。level 为 Campaign 的关卡定义(type: "path"), theme 为章节主题配色。
+   * onEnd({ result: "clear"|"fail"|"abort", stars }) 在关卡结束时回调。
+   */
+  start(level, theme, onEnd) {
+    this.level = level;
+    this.theme = theme || { wall: "#00f0ff", floor: "rgba(0,54,74,0.42)", glow: "#00f0ff", grid: "rgba(0,240,255,0.06)" };
+    this._onEnd = onEnd;
+    this.active = true;
+
+    const g = this.game;
+    // 复用玩家实体做移动与造型渲染, 但清空武器/数值(reset), 只套用选中皮肤外观
+    g.player.reset();
+    const sk = Skins.get(Skins.selected(g.save));
+    if (sk) g.player.skin = { id: sk.id, shape: sk.shape, accent: sk.accent, star: Math.max(1, Skins.starOf(g.save, sk.id)) };
+
+    const start = level.path[0];
+    this.finish = level.path[level.path.length - 1];
+    g.player.x = start.x;
+    g.player.y = start.y;
+    g.player.facing.set(0, -1);
+    g.player.moveDir.set(0, 0);
+
+    this.stars = level.stars.map((s) => ({ x: s.x, y: s.y, got: false }));
+    this.timeLeft = level.timeLimit;
+    this.elapsed = 0;
+    this.done = false;
+    this._flameT = 0;
+
+    // 生命值 / 敌人 / 子弹 —— 关卡自管理, 不走 Game 的池
+    this.hp = HP_MAX;
+    this.invuln = 0;
+    this._wallHit = false;         // 上一帧是否处于"越界贴墙"状态, 用于边沿触发扣血(不连扣)
+    this.enemies = [];             // { x, y, hp, r, flash }
+    this.bullets = [];             // { x, y, vx, vy, life, r, color }
+    this._shootT = SHOOT_INTERVAL; // 首发略等
+    this._spawnT = 1.2;            // 首刷延迟, 给玩家上手时间
+
+    // 清场: 关卡不使用生存模式的敌人/子弹/掉落, 但复用粒子系统做尾焰与拾取特效
+    g.particles.clear();
+    g.beams.length = 0;
+    g.bosses = [];
+    g.timeScale = 1;
+    g.flash = 0;
+    g.camera.update(g.player, 1); // 立即对齐相机
+  }
+
+  /** 主动退出(返回选关) */
+  abort() {
+    if (!this.active) return;
+    this._finish("abort", 0);
+  }
+
+  _finish(result, stars) {
+    if (this.done) return;
+    this.done = true;
+    this.active = false;
+    const cb = this._onEnd;
+    this._onEnd = null;
+    if (cb) cb({ result, stars });
+  }
+
+  // ---------------- 几何: 通道中心线最近点 ----------------
+  /** 返回玩家点到折线(通道中心线)的最近点, 附带所在段索引 seg 与该段上的 t 参数(用于沿路径前推) */
+  _closestOnPath(px, py) {
+    const path = this.level.path;
+    let bx = path[0].x, by = path[0].y, bestD = Infinity, bestSeg = 0, bestT = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1];
+      const abx = b.x - a.x, aby = b.y - a.y;
+      const len2 = abx * abx + aby * aby || 1;
+      const t = clamp(((px - a.x) * abx + (py - a.y) * aby) / len2, 0, 1);
+      const cx = a.x + abx * t, cy = a.y + aby * t;
+      const d = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+      if (d < bestD) { bestD = d; bx = cx; by = cy; bestSeg = i; bestT = t; }
+    }
+    return { x: bx, y: by, dist: Math.sqrt(bestD), seg: bestSeg, t: bestT };
+  }
+
+  /** 玩家受伤统一入口: 处理无敌帧/演出/死亡判定 */
+  _hurtPlayer(reason) {
+    if (this.invuln > 0 || this.done) return;
+    this.hp -= 1;
+    this.invuln = INVULN_TIME;
+    const g = this.game;
+    g.camera.shake(reason === "wall" ? 12 : 16);
+    g.screenFlash(reason === "wall" ? 0.35 : 0.5);
+    g.audio.hit && g.audio.hit();
+    g.particles.burst(g.player.x, g.player.y, "#ff6b7d", 22, 260, 3, 0.6);
+    g.particles.text(g.player.x, g.player.y - 32, "-1", "#ff6b7d", 22);
+    if (this.hp <= 0) {
+      g.audio.gameover && g.audio.gameover();
+      g.camera.shake(24);
+      this._finish("fail", 0);
+    }
+  }
+
+  /**
+   * 全屏生成敌人: 在当前相机可视范围的边缘随机挑一个点(通道内外都可以),
+   * 敌人无需受走廊约束, 可从墙外冲进来撞玩家, 强化"到处都是威胁"的压迫感.
+   */
+  _spawnEnemy() {
+    const g = this.game;
+    const cam = g.camera;
+    const W = g.viewW, H = g.viewH;
+    const margin = 40; // 出屏外一点点, 让敌人从画面外缓入, 视觉上更自然
+    // 四条边随机: 0=上 1=右 2=下 3=左
+    const edge = Math.floor(rand(0, 4));
+    let ex, ey;
+    if (edge === 0)      { ex = cam.x + rand(-margin, W + margin); ey = cam.y - margin; }
+    else if (edge === 1) { ex = cam.x + W + margin;                ey = cam.y + rand(-margin, H + margin); }
+    else if (edge === 2) { ex = cam.x + rand(-margin, W + margin); ey = cam.y + H + margin; }
+    else                 { ex = cam.x - margin;                    ey = cam.y + rand(-margin, H + margin); }
+    // 世界边界钳制, 避免刷到世界外反被相机丢掉
+    ex = clamp(ex, ENEMY_R, CONFIG.world.width - ENEMY_R);
+    ey = clamp(ey, ENEMY_R, CONFIG.world.height - ENEMY_R);
+    this.enemies.push({ x: ex, y: ey, hp: ENEMY_HP, r: ENEMY_R, flash: 0 });
+    g.particles.burst(ex, ey, "#ff6b7d", 10, 160, 2, 0.35);
+  }
+
+  // ---------------- 更新 ----------------
+  update(dt) {
+    if (!this.active || this.done) return;
+    const g = this.game;
+    const p = g.player;
+    this.elapsed += dt;
+    if (this.invuln > 0) this.invuln = Math.max(0, this.invuln - dt);
+
+    // 移动(键盘/摇杆), 不触发任何武器逻辑
+    const mv = g.input.getMoveVector();
+    if (mv.lengthSq > 0) {
+      p.x += mv.x * SPEED * dt;
+      p.y += mv.y * SPEED * dt;
+      p.facing.copy(mv);
+      p.moveDir.copy(mv);
+      // 引擎尾焰(方向性拖尾), 复刻 Player.update 的观感
+      this._flameT += dt;
+      const c = p.skin.accent || this.theme.wall;
+      const rx = p.x - p.facing.x * p.radius;
+      const ry = p.y - p.facing.y * p.radius;
+      for (let i = 0; i < 2; i++) {
+        g.particles.spark(rx, ry,
+          -p.facing.x * 70 + rand(-30, 30), -p.facing.y * 70 + rand(-30, 30),
+          rand(0.22, 0.4), c, rand(2, 3.4));
+      }
+    } else {
+      p.moveDir.set(0, 0);
+    }
+    p.animT += dt;
+
+    // 世界边界兜底
+    p.x = clamp(p.x, p.radius, CONFIG.world.width - p.radius);
+    p.y = clamp(p.y, p.radius, CONFIG.world.height - p.radius);
+
+    // 通道约束: 距中心线超过 (radius - 机身半径) 则贴墙滑回;
+    // 边沿触发扣血——只有"从非贴墙 -> 贴墙"这一帧扣一次, 无敌帧结束再贴仍会再扣.
+    const near = this._closestOnPath(p.x, p.y);
+    const maxD = this.level.radius - p.radius;
+    if (near.dist > maxD) {
+      const nx = (p.x - near.x) / (near.dist || 1);
+      const ny = (p.y - near.y) / (near.dist || 1);
+      p.x = near.x + nx * maxD;
+      p.y = near.y + ny * maxD;
+      if (!this._wallHit) {
+        this._wallHit = true;
+        this._hurtPlayer("wall");
+      }
+      // 撞墙火花(常驻贴墙也保留少量, 强化边界感)
+      if (Math.floor(this.elapsed * 30) % 3 === 0) {
+        g.particles.spark(p.x, p.y, rand(-40, 40), rand(-40, 40), 0.25, this.theme.wall, 2.2);
+      }
+    } else {
+      this._wallHit = false;
+    }
+
+    // 自动射击: 沿 facing 每 SHOOT_INTERVAL 发射一颗
+    this._shootT -= dt;
+    if (this._shootT <= 0) {
+      this._shootT += SHOOT_INTERVAL;
+      const dir = (p.facing.lengthSq > 0) ? p.facing : { x: 0, y: -1 };
+      const c = p.skin.accent || this.theme.wall;
+      this.bullets.push({
+        x: p.x + dir.x * (p.radius + 4),
+        y: p.y + dir.y * (p.radius + 4),
+        vx: dir.x * BULLET_SPEED,
+        vy: dir.y * BULLET_SPEED,
+        life: BULLET_LIFE,
+        r: BULLET_R,
+        color: c,
+      });
+      g.audio.shoot && g.audio.shoot();
+    }
+
+    // 敌人生成
+    this._spawnT -= dt;
+    if (this._spawnT <= 0) {
+      this._spawnT += ENEMY_SPAWN_INTERVAL;
+      this._spawnEnemy();
+    }
+
+    // 子弹: 直线飞行 + 撞敌 + 出走廊消散
+    for (const b of this.bullets) {
+      if (b.life <= 0) continue;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.life -= dt;
+      if (b.life <= 0) continue;
+      for (const e of this.enemies) {
+        if (e.hp <= 0) continue;
+        const dx = e.x - b.x, dy = e.y - b.y;
+        const rr = e.r + b.r;
+        if (dx * dx + dy * dy < rr * rr) {
+          e.hp -= 1;
+          e.flash = 0.09;
+          b.life = 0;
+          g.particles.burst(b.x, b.y, b.color, 6, 200, 2, 0.28);
+          if (e.hp <= 0) {
+            g.audio.hurt && g.audio.hurt();
+            g.particles.burst(e.x, e.y, "#ff6b7d", 20, 280, 3, 0.55);
+          } else {
+            g.audio.hit && g.audio.hit();
+          }
+          break;
+        }
+      }
+      if (b.life <= 0) continue;
+      // 敌人现在可能在通道外, 子弹不再受走廊约束; 只在飞出世界边界时消散
+      if (b.x < 0 || b.y < 0 || b.x > CONFIG.world.width || b.y > CONFIG.world.height) {
+        b.life = 0;
+      }
+    }
+    this.bullets = this.bullets.filter((b) => b.life > 0);
+
+    // 敌人: 朝玩家追击, 全屏活动(可穿墙来袭), 撞玩家自毁并扣血
+    for (const e of this.enemies) {
+      if (e.hp <= 0) continue;
+      if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
+      const dx = p.x - e.x, dy = p.y - e.y;
+      const len = Math.hypot(dx, dy) || 1;
+      e.x += (dx / len) * ENEMY_SPEED * dt;
+      e.y += (dy / len) * ENEMY_SPEED * dt;
+      // 世界边界钳制(允许穿墙, 但不能跑出地图, 否则相机会丢)
+      e.x = clamp(e.x, e.r, CONFIG.world.width - e.r);
+      e.y = clamp(e.y, e.r, CONFIG.world.height - e.r);
+      const rr = (e.r + p.radius) * 0.9;
+      if (dx * dx + dy * dy < rr * rr) {
+        this._hurtPlayer("enemy");
+        e.hp = 0;
+        g.particles.burst(e.x, e.y, "#ff6b7d", 18, 240, 3, 0.5);
+      }
+    }
+    this.enemies = this.enemies.filter((e) => e.hp > 0);
+
+    // 拾取能量星
+    for (const s of this.stars) {
+      if (s.got) continue;
+      if (Vector2.distSq(p, s) < (p.radius + STAR_R) ** 2) {
+        s.got = true;
+        g.audio.pickup();
+        g.particles.burst(s.x, s.y, "#ffd23f", 18, 240, 3, 0.6);
+        g.particles.text(s.x, s.y - 30, "★", "#ffd23f", 26);
+      }
+    }
+
+    // 粒子/相机
+    g.particles.update(dt);
+    g.camera.update(p, dt);
+
+    // 通关: 抵达终点纵向阈值
+    if (p.y <= this.finish.y + FINISH_PAD) {
+      const got = this.stars.filter((s) => s.got).length;
+      g.audio.bossKill && g.audio.bossKill();
+      g.screenFlash(0.7);
+      g.camera.shake(24);
+      g.particles.burst(p.x, p.y, this.theme.glow, 40, 320, 5, 1.0);
+      this._finish("clear", got);
+      return;
+    }
+
+    // 超时失败
+    this.timeLeft -= dt;
+    if (this.timeLeft <= 0) {
+      this.timeLeft = 0;
+      g.audio.gameover && g.audio.gameover();
+      g.camera.shake(20);
+      this._finish("fail", 0);
+    }
+  }
+
+  // ---------------- 渲染 ----------------
+  render(ctx) {
+    if (!this.level) return;
+    const g = this.game;
+    const cam = g.camera;
+
+    cam.begin(ctx);
+    this._drawBackground(ctx);
+    this._drawCorridor(ctx);
+    this._drawMarkers(ctx);
+    this._drawStars(ctx);
+    this._drawEnemies(ctx);
+    this._drawBullets(ctx);
+    this._drawPlayer(ctx);
+    g.particles.render(ctx);
+    cam.end(ctx);
+
+    this._drawHud(ctx);
+
+    // 通关瞬间的全屏白闪(演出)
+    if (g.flash > 0.001) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, g.flash);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, g.viewW, g.viewH);
+      ctx.restore();
+    }
+  }
+
+  _drawBackground(ctx) {
+    const gsz = CONFIG.world.gridSize;
+    const cam = this.game.camera;
+    const startX = Math.floor(cam.x / gsz) * gsz;
+    const startY = Math.floor(cam.y / gsz) * gsz;
+    const endX = cam.x + this.game.viewW;
+    const endY = cam.y + this.game.viewH;
+    ctx.save();
+    ctx.strokeStyle = this.theme.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = startX; x < endX; x += gsz) { ctx.moveTo(x, cam.y); ctx.lineTo(x, endY); }
+    for (let y = startY; y < endY; y += gsz) { ctx.moveTo(cam.x, y); ctx.lineTo(endX, y); }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 用同一条折线分层描边, 得到带发光墙壁的等宽通道 */
+  _tracePath(ctx) {
+    const path = this.level.path;
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  }
+
+  _drawCorridor(ctx) {
+    const r = this.level.radius;
+    ctx.save();
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    // 外层: 发光墙壁
+    this._tracePath(ctx);
+    ctx.strokeStyle = this.theme.wall;
+    ctx.globalAlpha = 0.9;
+    ctx.shadowBlur = 26;
+    ctx.shadowColor = this.theme.wall;
+    ctx.lineWidth = 2 * r + 14;
+    ctx.stroke();
+    // 内层: 深色可行走地面(挖出通道)
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    this._tracePath(ctx);
+    ctx.strokeStyle = "#05070f";
+    ctx.lineWidth = 2 * r + 2;
+    ctx.stroke();
+    this._tracePath(ctx);
+    ctx.strokeStyle = this.theme.floor;
+    ctx.lineWidth = 2 * r;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawMarkers(ctx) {
+    const start = this.level.path[0];
+    const fin = this.finish;
+    // 起点: 淡环
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = this.theme.wall;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(start.x, start.y, 34, 0, TAU); ctx.stroke();
+    ctx.restore();
+    // 终点: 脉动发光环 + "终点"
+    const pulse = 0.5 + 0.5 * Math.sin(this.elapsed * 4);
+    ctx.save();
+    ctx.shadowBlur = 24; ctx.shadowColor = this.theme.glow;
+    ctx.strokeStyle = this.theme.glow;
+    ctx.globalAlpha = 0.7 + 0.3 * pulse;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(fin.x, fin.y, 42 + pulse * 6, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = this.theme.glow;
+    ctx.font = "700 26px 'JetBrains Mono', monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("终点", fin.x, fin.y);
+    ctx.restore();
+  }
+
+  _drawStars(ctx) {
+    const pulse = 0.5 + 0.5 * Math.sin(this.elapsed * 5);
+    for (const s of this.stars) {
+      if (s.got) continue;
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.shadowBlur = 18; ctx.shadowColor = "#ffd23f";
+      ctx.fillStyle = "#ffd23f";
+      ctx.globalAlpha = 0.85 + 0.15 * pulse;
+      ctx.font = `700 ${34 + pulse * 4}px 'JetBrains Mono', monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("★", 0, 2);
+      ctx.restore();
+    }
+  }
+
+  /** 玩家无敌帧内做跳帧闪烁, 提示"当前不吃伤害" */
+  _drawPlayer(ctx) {
+    const p = this.game.player;
+    if (this.invuln > 0 && Math.floor(this.invuln * 20) % 2 === 0) return;
+    p.render(ctx);
+  }
+
+  /** 敌人: 红色菱形几何体, 命中闪白, 造型与生存模式区分, 关卡不复用 Enemy 类 */
+  _drawEnemies(ctx) {
+    for (const e of this.enemies) {
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.rotate(this.elapsed * 2);
+      ctx.shadowBlur = 16; ctx.shadowColor = "#ff6b7d";
+      ctx.fillStyle = e.flash > 0 ? "#ffffff" : "#ff2b4a";
+      ctx.strokeStyle = "#ffd23f";
+      ctx.lineWidth = 2;
+      const r = e.r;
+      ctx.beginPath();
+      ctx.moveTo(0, -r);
+      ctx.lineTo(r, 0);
+      ctx.lineTo(0, r);
+      ctx.lineTo(-r, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /** 子弹: 沿运动方向的短彗尾, 复用玩家 accent 色 */
+  _drawBullets(ctx) {
+    for (const b of this.bullets) {
+      const sp = Math.hypot(b.vx, b.vy) || 1;
+      const ux = b.vx / sp, uy = b.vy / sp;
+      const tail = b.r * 2.4;
+      ctx.save();
+      ctx.shadowBlur = 12; ctx.shadowColor = b.color;
+      ctx.strokeStyle = b.color;
+      ctx.lineCap = "round";
+      ctx.lineWidth = b.r * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(b.x - ux * tail, b.y - uy * tail);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.6, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /** 屏幕空间 HUD: 关卡名 / 倒计时 / 星星进度 / 生命值(三颗心) */
+  _drawHud(ctx) {
+    const W2 = this.game.viewW;
+    const got = this.stars.filter((s) => s.got).length;
+    const total = this.stars.length;
+    const t = Math.max(0, this.timeLeft);
+    const urgent = t <= 6;
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    // 关卡编号 + 名称
+    ctx.fillStyle = "#8fa9c8";
+    ctx.font = "600 13px 'JetBrains Mono', monospace";
+    ctx.fillText(`${this.level.id}  ${this.level.name}`, W2 / 2, 16);
+    // 倒计时
+    ctx.font = "800 40px 'JetBrains Mono', monospace";
+    ctx.fillStyle = urgent ? "#ff6b7d" : "#e8f6ff";
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = urgent ? "#ff2bd6" : "#00f0ff";
+    ctx.fillText(t.toFixed(1), W2 / 2, 34);
+    // 星星进度
+    ctx.shadowBlur = 10; ctx.shadowColor = "#ffd23f";
+    ctx.font = "700 24px 'JetBrains Mono', monospace";
+    let stars = "";
+    for (let i = 0; i < total; i++) stars += i < got ? "★" : "☆";
+    ctx.fillStyle = "#ffd23f";
+    ctx.fillText(stars, W2 / 2, 84);
+    ctx.restore();
+
+    // 生命值: 左上角三颗心, 已损失显示为暗轮廓; 无敌帧内整体闪烁提示
+    ctx.save();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.font = "700 26px 'JetBrains Mono', monospace";
+    const blink = this.invuln > 0 && Math.floor(this.invuln * 20) % 2 === 0;
+    for (let i = 0; i < HP_MAX; i++) {
+      const alive = i < this.hp;
+      ctx.globalAlpha = blink && alive ? 0.35 : 1;
+      ctx.shadowBlur = alive ? 12 : 0;
+      ctx.shadowColor = "#ff2b4a";
+      ctx.fillStyle = alive ? "#ff4a7f" : "#3a2130";
+      ctx.fillText("♥", 20 + i * 30, 18);
+    }
+    ctx.restore();
+  }
+}
+
+Object.assign(exports, { LevelRunner });
+};
+
 __defs["/Users/fiona/Desktop/neon-survivors/js/core/ParticleSystem.js"] = function (exports, require) {
 /**
  * ParticleSystem.js — 轻量粒子系统 + 浮动文字。
@@ -2944,6 +3658,8 @@ function defaults() {
     codex: {
       enemies: {}, bosses: {}, weapons: {}, items: {}, claimed: {},
     },
+    // 闯关模式进度：levels[关卡id] = 已获得星数(0..3), 键存在即代表已通关
+    campaign: { levels: {} },
   };
 }
 
@@ -3017,6 +3733,18 @@ const SaveData = {
             d.codex[cat] = dst;
           }
         }
+      }
+      // 闯关进度：仅接受形如 "数字-数字" 的关卡 id -> 0..3 的整数星数, 其余忽略
+      if (parsed.campaign && typeof parsed.campaign === "object" &&
+          parsed.campaign.levels && typeof parsed.campaign.levels === "object") {
+        const src = parsed.campaign.levels;
+        const dst = {};
+        for (const k of Object.keys(src)) {
+          if (typeof k === "string" && /^\d{1,2}-\d{1,2}$/.test(k)) {
+            dst[k] = Math.max(0, Math.min(3, Math.floor(num(src[k]))));
+          }
+        }
+        d.campaign.levels = dst;
       }
     } catch (_e) {
       return defaults();
@@ -4034,6 +4762,179 @@ if (document.readyState === "loading") {
   bootstrap();
 }
 
+};
+
+__defs["/Users/fiona/Desktop/neon-survivors/js/systems/Campaign.js"] = function (exports, require) {
+/**
+ * Campaign.js — 闯关模式的数据源与进度逻辑（单一数据源）。
+ *
+ * 设计：
+ *  - 关卡按「章节」组织, 每章有独立主题(配色)与玩法类型(type)。
+ *  - 关卡编码为 "章-关"(如 "1-1"), 每关最高 3 星(沿路线可收集的星星数)。
+ *  - 解锁规则:
+ *      · 章节: 第 1 章默认解锁; 后续章节需上一章累计星数达到 reqStars。
+ *      · 关卡: 所属章节需已解锁; 每章第 1 关默认可玩, 其余关需上一关已通关。
+ *  - 进度存于 save.campaign.levels[关卡id] = 星数(0..3), 键存在即代表已通关。
+ *
+ * 目前 type 仅实现 "path"(路线走廊: 从下方出发抵达上方终点, 沿途收集星星, 有时间限制)。
+ * 新增玩法只需扩展 type 与对应的关卡引擎分支, 数据在此追加即可。
+ *
+ * 坐标系: 关卡在 3200×3200 的世界空间内布局(与相机边界一致)。
+ *  y 越大越靠下, 起点在下方(大 y), 终点在上方(小 y)。
+ */
+
+// 世界尺寸(与 config.world 保持一致, 供关卡布点参考)
+const W = 3200;
+
+/** 路线关卡工厂: 给定路点/星星/时间, 补齐默认字段 */
+function pathLevel(id, name, { radius, timeLimit, path, stars }) {
+  return { id, name, type: "path", radius, timeLimit, path, stars };
+}
+
+const CHAPTERS = [
+  {
+    id: 1,
+    name: "起源回廊",
+    sub: "ORIGIN CORRIDOR",
+    intro: "沿着霓虹通道向上突进, 抵达顶端信标, 沿途拾取能量星。切勿撞出通道之外。",
+    reqStars: 0,
+    theme: { wall: "#00f0ff", floor: "rgba(0,54,74,0.42)", glow: "#00f0ff", grid: "rgba(0,240,255,0.06)" },
+    levels: [
+      pathLevel("1-1", "启程信标", {
+        radius: 135, timeLimit: 32,
+        // 平缓的 S 形通道, 新手友好
+        path: [
+          { x: 1600, y: 2980 }, { x: 1600, y: 2520 },
+          { x: 1230, y: 2120 }, { x: 1230, y: 1680 },
+          { x: 1930, y: 1260 }, { x: 1930, y: 840 },
+          { x: 1600, y: 480 },  { x: 1600, y: 240 },
+        ],
+        stars: [
+          { x: 1230, y: 2120 }, { x: 1930, y: 1050 }, { x: 1600, y: 420 },
+        ],
+      }),
+      pathLevel("1-2", "曲折脉冲", {
+        radius: 112, timeLimit: 30,
+        // 更多转折, 通道更窄
+        path: [
+          { x: 1600, y: 2980 }, { x: 2050, y: 2600 },
+          { x: 1150, y: 2260 }, { x: 2000, y: 1900 },
+          { x: 1100, y: 1520 }, { x: 1900, y: 1140 },
+          { x: 1250, y: 760 },  { x: 1600, y: 240 },
+        ],
+        stars: [
+          { x: 1600, y: 2430 }, { x: 1520, y: 1710 }, { x: 1420, y: 950 },
+        ],
+      }),
+      pathLevel("1-3", "临界穿越", {
+        radius: 96, timeLimit: 30,
+        // 最窄且转折密集, 收尾关
+        path: [
+          { x: 1600, y: 2980 }, { x: 1200, y: 2700 }, { x: 2000, y: 2440 },
+          { x: 1200, y: 2140 }, { x: 2050, y: 1840 }, { x: 1150, y: 1520 },
+          { x: 2000, y: 1180 }, { x: 1250, y: 820 },  { x: 1750, y: 480 },
+          { x: 1600, y: 240 },
+        ],
+        stars: [
+          { x: 1600, y: 2570 }, { x: 1600, y: 1680 }, { x: 1500, y: 650 },
+        ],
+      }),
+    ],
+  },
+  {
+    id: 2,
+    name: "熔核裂隙",
+    sub: "MOLTEN RIFT",
+    intro: "灼热熔核深处的试炼, 全新玩法正在锻造中。集齐前一章的星星以点亮此处。",
+    reqStars: 6, // 需第一章累计 6 星才能进入
+    theme: { wall: "#ff7a3d", floor: "rgba(70,24,10,0.42)", glow: "#ff7a3d", grid: "rgba(255,122,61,0.06)" },
+    levels: [
+      { id: "2-1", name: "敬请期待", type: "coming" },
+      { id: "2-2", name: "敬请期待", type: "coming" },
+      { id: "2-3", name: "敬请期待", type: "coming" },
+    ],
+  },
+];
+
+const Campaign = {
+  WORLD: W,
+
+  chapters() { return CHAPTERS; },
+  chapter(ci) { return CHAPTERS[ci] || null; },
+  level(ci, li) {
+    const c = CHAPTERS[ci];
+    return c && c.levels[li] ? c.levels[li] : null;
+  },
+
+  /** 该关卡是否为「敬请期待」占位(不可进入) */
+  isComing(level) { return !level || level.type === "coming"; },
+
+  /** 已获得星数: 未通关返回 -1, 已通关返回 0..3 */
+  stars(save, id) {
+    const v = save.campaign && save.campaign.levels ? save.campaign.levels[id] : undefined;
+    return typeof v === "number" ? Math.max(0, Math.min(3, v)) : -1;
+  },
+  isCleared(save, id) { return this.stars(save, id) >= 0; },
+
+  /** 记录一次通关成绩(取历史最高星数); 返回是否刷新了最高星 */
+  record(save, id, stars) {
+    if (!save.campaign) save.campaign = { levels: {} };
+    if (!save.campaign.levels) save.campaign.levels = {};
+    const s = Math.max(0, Math.min(3, Math.floor(stars || 0)));
+    const prev = save.campaign.levels[id];
+    const best = typeof prev === "number" ? Math.max(prev, s) : s;
+    const improved = typeof prev !== "number" || s > prev;
+    save.campaign.levels[id] = best;
+    return improved;
+  },
+
+  /** 某章节累计已得星数(仅统计可玩关卡) */
+  chapterStars(save, ci) {
+    const c = CHAPTERS[ci];
+    if (!c) return 0;
+    let sum = 0;
+    for (const lv of c.levels) {
+      if (this.isComing(lv)) continue;
+      sum += Math.max(0, this.stars(save, lv.id));
+    }
+    return sum;
+  },
+
+  /** 某章节可玩关卡的满星总数 */
+  chapterMaxStars(ci) {
+    const c = CHAPTERS[ci];
+    if (!c) return 0;
+    return c.levels.filter((lv) => !this.isComing(lv)).length * 3;
+  },
+
+  /** 全部累计已得星数 */
+  totalStars(save) {
+    let sum = 0;
+    for (let i = 0; i < CHAPTERS.length; i++) sum += this.chapterStars(save, i);
+    return sum;
+  },
+
+  /** 章节是否解锁: 第一章恒解锁, 其余看上一章累计星数是否达标 */
+  chapterUnlocked(save, ci) {
+    if (ci <= 0) return true;
+    const c = CHAPTERS[ci];
+    if (!c) return false;
+    return this.chapterStars(save, ci - 1) >= (c.reqStars || 0);
+  },
+
+  /** 关卡是否解锁: 章节已解锁, 且为该章首关或上一关已通关 */
+  levelUnlocked(save, ci, li) {
+    if (!this.chapterUnlocked(save, ci)) return false;
+    const c = CHAPTERS[ci];
+    if (!c || !c.levels[li]) return false;
+    if (this.isComing(c.levels[li])) return false;
+    if (li === 0) return true;
+    const prev = c.levels[li - 1];
+    return prev ? this.isCleared(save, prev.id) : false;
+  },
+};
+
+Object.assign(exports, { Campaign });
 };
 
 __defs["/Users/fiona/Desktop/neon-survivors/js/systems/Codex.js"] = function (exports, require) {
@@ -5530,6 +6431,7 @@ const {UpgradeSystem} = require("/Users/fiona/Desktop/neon-survivors/js/systems/
 const {MetaProgression} = require("/Users/fiona/Desktop/neon-survivors/js/systems/MetaProgression.js");
 const {Skins, RARITY, MAX_STAR} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
 const {Codex} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Codex.js");
+const {Campaign} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Campaign.js");
 const {Account} = require("/Users/fiona/Desktop/neon-survivors/js/core/Account.js");
 
 /** HTML 转义：防止用户输入的昵称 / ID 破坏 DOM 结构或注入脚本 */
@@ -5576,7 +6478,7 @@ class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, user, { onStart, onResume, onShop, onHangar, onCodex, onAccount, onCloud, onLeaderboard }) {
+  showMenu(save, user, { onStart, onResume, onCampaign, onShop, onHangar, onCodex, onAccount, onCloud, onLeaderboard }) {
     this.clear();
     const b = save.best;
     const userBar = user
@@ -5595,12 +6497,18 @@ class Screens {
     //  · 开始游戏 -> 品红 (btn-primary, 与游戏主强调色一致)
     //  · 重新开始 -> 青 (btn-restart, 与"继续上局"区分, 视觉降级)
     //  · 继续上局 -> 品红 (与开始游戏同级, 都是主行动)
+    // 有续玩存档时: 三按钮同排(继续上局=品红 / 重新开始=青 / 闯关=玫粉).
+    // 无续玩时: 首行 [开始游戏 + 闯关模式] 并列, 两个都是主入口.
     const primaryRow = onResume
       ? `
         <button class="btn btn-primary" id="btn-resume">↩ 继续上局</button>
         <button class="btn btn-restart" id="btn-start">▶ 重新开始</button>
+        <button class="btn btn-campaign" id="btn-campaign">◈ 闯关模式</button>
       `
-      : `<button class="btn btn-primary" id="btn-start">▶ 开始游戏</button>`;
+      : `
+        <button class="btn btn-primary" id="btn-start">▶ 开始游戏</button>
+        <button class="btn btn-campaign" id="btn-campaign">◈ 闯关模式</button>
+      `;
     const el = this._make(`
       ${userBar}
       <div class="sub">ROGUELITE · SURVIVOR · 霓虹幸存者</div>
@@ -5635,6 +6543,7 @@ class Screens {
     el.querySelector("#btn-shop").addEventListener("click", onShop);
     el.querySelector("#btn-hangar").addEventListener("click", onHangar);
     if (onCodex) el.querySelector("#btn-codex").addEventListener("click", onCodex);
+    if (onCampaign) el.querySelector("#btn-campaign").addEventListener("click", onCampaign);
     if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
     if (onCloud) el.querySelector("#btn-cloud").addEventListener("click", onCloud);
     if (onLeaderboard) el.querySelector("#btn-rank").addEventListener("click", onLeaderboard);
@@ -5642,6 +6551,132 @@ class Screens {
       const bar = el.querySelector("#user-bar");
       if (bar) bar.addEventListener("click", onAccount);
     }
+  }
+
+  /** 星级点：已得实心 ★ / 未得空心 ☆，n<0 表示尚未通关 */
+  _starRow(n, total = 3) {
+    let s = "";
+    for (let i = 0; i < total; i++) s += i < n ? "★" : "☆";
+    return s;
+  }
+
+  /**
+   * 闯关模式选关界面：按章节列出关卡卡片，展示解锁状态与已得星数。
+   * onPlay(ci, li) 进入某关；onBack 返回主菜单。
+   */
+  showCampaign(save, { onPlay, onBack }) {
+    this.clear();
+    const chapters = Campaign.chapters();
+    const total = Campaign.totalStars(save);
+
+    const chapHTML = chapters.map((ch, ci) => {
+      const unlocked = Campaign.chapterUnlocked(save, ci);
+      const got = Campaign.chapterStars(save, ci);
+      const max = Campaign.chapterMaxStars(ci);
+      const c = ch.theme || {};
+      const glow = c.glow || "#00f0ff";
+      const lockHint = unlocked ? "" : `需上一章累计 ${ch.reqStars} ★ 解锁`;
+
+      const levelCards = ch.levels.map((lv, li) => {
+        const coming = Campaign.isComing(lv);
+        const lvUnlocked = !coming && Campaign.levelUnlocked(save, ci, li);
+        const stars = Campaign.stars(save, lv.id); // -1 未通关
+        const cleared = stars >= 0;
+        let cls = "lvl-card";
+        if (coming) cls += " lvl-coming";
+        else if (!lvUnlocked) cls += " lvl-locked";
+        else if (cleared) cls += " lvl-cleared";
+        const badge = coming ? "🚧" : (!lvUnlocked ? "🔒" : (cleared ? "✔" : "▶"));
+        const starsHTML = coming
+          ? `<span class="lvl-soon">敬请期待</span>`
+          : `<span class="lvl-stars">${this._starRow(stars)}</span>`;
+        return `
+          <button class="${cls}" data-ci="${ci}" data-li="${li}"
+            ${(coming || !lvUnlocked) ? "disabled" : ""}
+            style="--glow:${glow}">
+            <span class="lvl-id">${esc(lv.id)}</span>
+            <span class="lvl-badge">${badge}</span>
+            <span class="lvl-name">${esc(lv.name)}</span>
+            ${starsHTML}
+          </button>`;
+      }).join("");
+
+      return `
+        <div class="chapter ${unlocked ? "" : "chapter-locked"}" style="--glow:${glow}">
+          <div class="chapter-head">
+            <div class="chapter-title">
+              <span class="chapter-idx">CH.${ch.id}</span>
+              <span class="chapter-name">${esc(ch.name)}</span>
+              <span class="chapter-sub">${esc(ch.sub || "")}</span>
+            </div>
+            <div class="chapter-prog">${unlocked ? `★ ${got}/${max}` : `🔒 ${esc(lockHint)}`}</div>
+          </div>
+          <div class="chapter-intro">${esc(ch.intro || "")}</div>
+          <div class="lvl-grid">${levelCards}</div>
+        </div>`;
+    }).join("");
+
+    const el = this._make(`
+      <div class="sub">CAMPAIGN · 闯关模式</div>
+      <h2 class="neon-title">星轨试炼</h2>
+      <div class="cores-balance"><span class="cur-core-amt">★ ${total}</span> <span class="lbl">累计星星</span></div>
+      <div class="campaign-list">${chapHTML}</div>
+      <button class="btn" id="btn-back">← 返回</button>
+      <div class="hint">${this.isTouch
+        ? "拖动屏幕沿通道飞向终点 · 沿途收集能量星 · 别撞出通道"
+        : "移动: W A S D / 方向键 &nbsp;·&nbsp; 沿通道飞向终点 · 收集能量星 · P/ESC 退出"}</div>
+    `, "campaign-screen");
+    this.root.appendChild(el);
+
+    el.querySelectorAll(".lvl-card").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.addEventListener("click", () => {
+        const ci = parseInt(btn.dataset.ci, 10);
+        const li = parseInt(btn.dataset.li, 10);
+        onPlay(ci, li);
+      });
+    });
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+  }
+
+  /**
+   * 关卡结算界面。data: { chapter, level, result, stars, best, improved, hasNext }
+   * onRetry 重试本关；onNext 进入下一关(可空)；onSelect 返回选关。
+   */
+  showLevelResult(data, { onRetry, onNext, onSelect }) {
+    this.clear();
+    const { chapter, level, result, stars, best, improved, hasNext } = data;
+    const win = result === "clear";
+    const titleTxt = win ? "关卡通关" : "闯关失败";
+    const titleCls = win ? "res-win" : "res-fail";
+    const bigStars = win
+      ? `<div class="res-stars">${this._starRow(stars)}</div>`
+      : `<div class="res-stars res-stars-fail">☆☆☆</div>`;
+    const sub = win
+      ? (improved ? `<div class="res-new">★ 新纪录!</div>` : `<div class="res-best">历史最佳 ${this._starRow(Math.max(0, best))}</div>`)
+      : `<div class="res-tip">时间耗尽，未能抵达终点</div>`;
+
+    const nextBtn = (win && hasNext && onNext)
+      ? `<button class="btn btn-primary" id="btn-next">下一关 ▸</button>`
+      : "";
+
+    const el = this._make(`
+      <div class="sub">${esc(chapter ? chapter.name : "")}</div>
+      <div class="res-level">${esc(level ? level.id : "")} · ${esc(level ? level.name : "")}</div>
+      <h2 class="neon-title ${titleCls}">${titleTxt}</h2>
+      ${bigStars}
+      ${sub}
+      <div class="menu-btns res-btns">
+        ${nextBtn}
+        <button class="btn ${nextBtn ? "btn-restart" : "btn-primary"}" id="btn-retry">↺ 重试</button>
+        <button class="btn btn-3" id="btn-select">☰ 选关</button>
+      </div>
+    `, "result-screen");
+    this.root.appendChild(el);
+
+    if (nextBtn) el.querySelector("#btn-next").addEventListener("click", onNext);
+    el.querySelector("#btn-retry").addEventListener("click", onRetry);
+    el.querySelector("#btn-select").addEventListener("click", onSelect);
   }
 
   /** 强化实验室：花费核心购买永久升级 */

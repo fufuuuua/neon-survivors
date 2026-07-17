@@ -119,4 +119,6 @@ export const GameState = Object.freeze({
   GAMEOVER: "GAMEOVER",
   CLOUD: "CLOUD",           // 云同步界面(注册/找回/上传下载存档)
   LEADERBOARD: "LEADERBOARD", // 排行榜界面
+  CAMPAIGN: "CAMPAIGN",       // 闯关模式选关界面(章节/关卡)
+  CAMPAIGN_PLAY: "CAMPAIGN_PLAY", // 正在进行某一闯关关卡
 });

@@ -32,6 +32,8 @@ function defaults() {
     codex: {
       enemies: {}, bosses: {}, weapons: {}, items: {}, claimed: {},
     },
+    // 闯关模式进度：levels[关卡id] = 已获得星数(0..3), 键存在即代表已通关
+    campaign: { levels: {} },
   };
 }
 
@@ -105,6 +107,18 @@ export const SaveData = {
             d.codex[cat] = dst;
           }
         }
+      }
+      // 闯关进度：仅接受形如 "数字-数字" 的关卡 id -> 0..3 的整数星数, 其余忽略
+      if (parsed.campaign && typeof parsed.campaign === "object" &&
+          parsed.campaign.levels && typeof parsed.campaign.levels === "object") {
+        const src = parsed.campaign.levels;
+        const dst = {};
+        for (const k of Object.keys(src)) {
+          if (typeof k === "string" && /^\d{1,2}-\d{1,2}$/.test(k)) {
+            dst[k] = Math.max(0, Math.min(3, Math.floor(num(src[k]))));
+          }
+        }
+        d.campaign.levels = dst;
       }
     } catch (_e) {
       return defaults();
