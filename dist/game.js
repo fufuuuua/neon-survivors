@@ -126,10 +126,13 @@ const GameState = Object.freeze({
   MENU: "MENU",
   SHOP: "SHOP",
   HANGAR: "HANGAR",
+  CODEX: "CODEX",
   PLAYING: "PLAYING",
   LEVELUP: "LEVELUP",
   PAUSED: "PAUSED",
   GAMEOVER: "GAMEOVER",
+  CLOUD: "CLOUD",           // 云同步界面(注册/找回/上传下载存档)
+  LEADERBOARD: "LEADERBOARD", // 排行榜界面
 });
 
 Object.assign(exports, { CONFIG, GameState });
@@ -491,6 +494,146 @@ class Camera {
 Object.assign(exports, { Camera });
 };
 
+__defs["/Users/fiona/Desktop/neon-survivors/js/core/CloudSync.js"] = function (exports, require) {
+/**
+ * CloudSync.js — 云端同步客户端(对接 Cloudflare Pages Functions + D1)。
+ *
+ * 职责:
+ *  - 管理本地保存的云端凭证 { cloudId, token, name }(token 即恢复码/云存档密钥)。
+ *  - 封装注册、按恢复码找回、拉/推云存档、提交成绩、拉取排行榜等网络调用。
+ *
+ * 设计:
+ *  - 所有方法都是「失败不抛异常」的: 网络/服务端出错时返回 { ok:false, error }, 由调用方决定降级,
+ *    从而保证离线时游戏仍能纯本地运行(localStorage), 云端只是可选增强。
+ *  - token 仅存在本地 localStorage, 并通过 Authorization 头发送; 绝不写入 URL/日志。
+ *
+ * 安全: 昵称等由服务端清洗; 排行榜昵称在 UI 渲染时须经 Screens.esc() 转义。
+ */
+const LS_KEY = "neondrift.cloud.v1"; // { cloudId, token, name }
+const BASE = "/api";
+const TIMEOUT = 8000; // ms, 避免弱网长时间挂起
+
+/** 读取本地云端凭证 */
+function loadCred() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (c && typeof c.token === "string" && c.token.length >= 16) {
+      return { cloudId: String(c.cloudId || ""), token: c.token, name: String(c.name || "") };
+    }
+  } catch (_e) { /* ignore */ }
+  return null;
+}
+
+function saveCred(c) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(c)); } catch (_e) { /* ignore */ }
+}
+
+function clearCred() {
+  try { localStorage.removeItem(LS_KEY); } catch (_e) { /* ignore */ }
+}
+
+/** 带超时 + 统一错误处理的 fetch 包装。返回 { ok, status, data } */
+async function req(path, { method = "GET", token = null, body = null, isText = false } = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
+  try {
+    const headers = {};
+    if (token) headers["authorization"] = `Bearer ${token}`;
+    let payload = null;
+    if (body != null) {
+      if (isText) { headers["content-type"] = "text/plain"; payload = body; }
+      else { headers["content-type"] = "application/json"; payload = JSON.stringify(body); }
+    }
+    const res = await fetch(`${BASE}${path}`, { method, headers, body: payload, signal: ctrl.signal });
+    let data = null;
+    try { data = await res.json(); } catch (_e) { data = null; }
+    return { ok: res.ok && (data ? data.ok !== false : true), status: res.status, data };
+  } catch (_e) {
+    return { ok: false, status: 0, data: null }; // 网络错误/超时
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const CloudSync = {
+  /** 当前本地凭证(未绑定返回 null) */
+  cred() { return loadCred(); },
+
+  /** 是否已绑定云端 */
+  isLinked() { return !!loadCred(); },
+
+  /**
+   * 注册新云端账号。成功后本地保存凭证并返回 { ok:true, token, name }。
+   * token 就是「恢复码」, 调用方应提示用户妥善保存。
+   */
+  async register(name) {
+    const r = await req("/register", { method: "POST", body: { name: name || "" } });
+    if (!r.ok || !r.data?.token) return { ok: false, error: "注册失败, 请稍后重试" };
+    const cred = { cloudId: r.data.cloudId, token: r.data.token, name: r.data.name };
+    saveCred(cred);
+    return { ok: true, token: cred.token, name: cred.name };
+  },
+
+  /**
+   * 用恢复码(token)在新设备上找回账号: 尝试拉取存档以验证 token 有效。
+   * 成功返回 { ok:true, name, save }。
+   */
+  async linkByToken(token) {
+    const t = (token || "").trim();
+    if (t.length < 16) return { ok: false, error: "恢复码格式不正确" };
+    const r = await req("/save", { method: "GET", token: t });
+    if (r.status === 401) return { ok: false, error: "恢复码无效" };
+    if (!r.ok) return { ok: false, error: "网络异常, 请稍后重试" };
+    const name = r.data?.name || "";
+    saveCred({ cloudId: "", token: t, name });
+    return { ok: true, name, save: r.data?.save || null };
+  },
+
+  /** 拉取云存档: { ok:true, name, save|null } */
+  async pullSave() {
+    const c = loadCred();
+    if (!c) return { ok: false, error: "未绑定云端" };
+    const r = await req("/save", { method: "GET", token: c.token });
+    if (!r.ok) return { ok: false, error: "拉取失败" };
+    return { ok: true, name: r.data?.name || c.name, save: r.data?.save || null };
+  },
+
+  /** 推送(覆盖)云存档 */
+  async pushSave(save) {
+    const c = loadCred();
+    if (!c) return { ok: false, error: "未绑定云端" };
+    const r = await req("/save", { method: "PUT", token: c.token, body: JSON.stringify(save), isText: true });
+    return r.ok ? { ok: true } : { ok: false, error: "上传失败" };
+  },
+
+  /** 提交一局成绩(用于排行榜) */
+  async submitScore({ time, kills, bossKills, level }) {
+    const c = loadCred();
+    if (!c) return { ok: false, error: "未绑定云端" };
+    const r = await req("/score", {
+      method: "POST",
+      token: c.token,
+      body: { time, kills, bossKills, level },
+    });
+    return r.ok ? { ok: true } : { ok: false, error: "提交失败" };
+  },
+
+  /** 拉取排行榜前 N 名(无需绑定): { ok:true, list:[{name,best_time,...}] } */
+  async leaderboard(limit = 20) {
+    const r = await req(`/leaderboard?limit=${encodeURIComponent(limit)}`, { method: "GET" });
+    if (!r.ok) return { ok: false, error: "排行榜加载失败", list: [] };
+    return { ok: true, list: Array.isArray(r.data?.list) ? r.data.list : [] };
+  },
+
+  /** 解绑(仅清除本地凭证, 不删除云端数据) */
+  unlink() { clearCred(); },
+};
+
+Object.assign(exports, { CloudSync });
+};
+
 __defs["/Users/fiona/Desktop/neon-survivors/js/core/Game.js"] = function (exports, require) {
 /**
  * Game.js — 游戏核心控制器（外观/中介者）。
@@ -515,6 +658,7 @@ const {Pool} = require("/Users/fiona/Desktop/neon-survivors/js/core/Pool.js");
 const {SpatialGrid} = require("/Users/fiona/Desktop/neon-survivors/js/core/SpatialGrid.js");
 const {SaveData} = require("/Users/fiona/Desktop/neon-survivors/js/core/SaveData.js");
 const {Account} = require("/Users/fiona/Desktop/neon-survivors/js/core/Account.js");
+const {CloudSync} = require("/Users/fiona/Desktop/neon-survivors/js/core/CloudSync.js");
 
 const {Player} = require("/Users/fiona/Desktop/neon-survivors/js/entities/Player.js");
 const {Enemy} = require("/Users/fiona/Desktop/neon-survivors/js/entities/Enemy.js");
@@ -526,6 +670,7 @@ const {CollisionSystem} = require("/Users/fiona/Desktop/neon-survivors/js/system
 const {UpgradeSystem} = require("/Users/fiona/Desktop/neon-survivors/js/systems/UpgradeSystem.js");
 const {MetaProgression} = require("/Users/fiona/Desktop/neon-survivors/js/systems/MetaProgression.js");
 const {Skins} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
+const {Codex} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Codex.js");
 
 const {HUD} = require("/Users/fiona/Desktop/neon-survivors/js/ui/HUD.js");
 const {Screens} = require("/Users/fiona/Desktop/neon-survivors/js/ui/Screens.js");
@@ -577,7 +722,7 @@ class Game {
 
     // 触摸设备：创建屏上暂停按钮（电脑端用 P/ESC）
     this.isTouch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
-    if (this.isTouch) this._createPauseButton();
+    if (this.isTouch) { this._createPauseButton(); this._createSkillButton(); }
 
     this._bindGlobalKeys();
     this._bindAutoSave();
@@ -607,6 +752,36 @@ class Game {
   /** 显隐暂停按钮 */
   _showPauseBtn(visible) {
     if (this.pauseBtn) this.pauseBtn.style.display = visible ? "flex" : "none";
+    // 主动技能按钮显隐与暂停按钮同步（都仅在 PLAYING 显示）
+    this._syncSkillBtn(visible);
+  }
+
+  /** 创建移动端主动技能按钮（仅装备了含主动技能皮肤时可见） */
+  _createSkillButton() {
+    const btn = document.createElement("button");
+    btn.className = "skill-fab";
+    btn.setAttribute("aria-label", "主动技能");
+    btn.innerHTML = `<span class="sf-ic">◎</span><span class="sf-cd">READY</span>`;
+    btn.addEventListener("click", () => {
+      if (this.state === GameState.PLAYING) this.player.releaseActiveSkill(this);
+    });
+    (this.canvas.parentElement || document.body).appendChild(btn);
+    this.skillBtn = btn;
+  }
+
+  /** 每帧同步主动技能按钮显隐 + 冷却文本（PLAYING 且装备了含主动技能皮肤时才显示） */
+  _syncSkillBtn(visibleOverride) {
+    if (!this.skillBtn) return;
+    const sk = this.player && this.player.activeSkill;
+    const canShow = !!sk && (visibleOverride !== undefined ? visibleOverride : this.state === GameState.PLAYING);
+    if (!canShow) { this.skillBtn.style.display = "none"; return; }
+    this.skillBtn.style.display = "flex";
+    const ready = sk.timer <= 0;
+    this.skillBtn.classList.toggle("cooldown", !ready);
+    const cdEl = this.skillBtn.querySelector(".sf-cd");
+    if (cdEl) cdEl.textContent = ready ? "READY" : `${sk.timer.toFixed(1)}s`;
+    const icEl = this.skillBtn.querySelector(".sf-ic");
+    if (icEl && sk.icon) icEl.textContent = sk.icon;
   }
 
   // 活跃实体列表（只读视图，供系统/实体迭代）
@@ -638,6 +813,10 @@ class Game {
         if (this._levelChoices && this._levelChoices[idx]) {
           this._applyUpgrade(this._levelChoices[idx]);
         }
+      }
+      // 空格: 释放当前皮肤附带的主动技能（若已装备且冷却就绪）
+      if (k === " " && this.state === GameState.PLAYING) {
+        this.player.releaseActiveSkill(this);
       }
     });
   }
@@ -701,6 +880,16 @@ class Game {
     if (sp.weapons && typeof sp.weapons === "object") p.weapons = JSON.parse(JSON.stringify(sp.weapons));
     if (sp.acquired && typeof sp.acquired === "object") p.acquired = JSON.parse(JSON.stringify(sp.acquired));
     if (sp.skin && typeof sp.skin === "object") p.skin = { ...p.skin, ...sp.skin };
+    // 快照不保存主动技能状态, 依当前选中皮肤重新推导（保证续玩仍有主动技能可用）
+    p.activeSkill = null;
+    const curSkin = Skins.get(Skins.selected(this.save));
+    if (curSkin && curSkin.perk) {
+      // 只重放主动技能相关字段, 不重复注入数值加成（数值加成已在快照 player.* 中恢复）
+      // 通过临时对象跑一遍 perk, 再把 activeSkill 挑出来
+      const probe = { activeSkill: null, damageMul: 1, critChance: 0, cooldownMul: 1, lifesteal: 0, speed: 1, maxHp: 0, hp: 0, damageReduction: 0, pickupRange: 1 };
+      try { curSkin.perk(probe, Math.max(1, Skins.starOf(this.save, curSkin.id))); } catch (_e) { /* ignore */ }
+      if (probe.activeSkill) p.activeSkill = { ...probe.activeSkill, timer: 0 };
+    }
     p.invuln = 0;
 
     // 清空场上实体（重开一片战场），难度进度由 spawnSystem 延续
@@ -756,6 +945,8 @@ class Game {
 
     // 战术预载：开局立即领取额外强化选择
     if (this.player.pendingLevels > 0) this.onLevelUp();
+    // 图鉴: 开局默认拥有脉冲枪, 视为已发掘
+    Codex.discover(this.save, "weapons", "blaster");
   }
 
   /** 显示主菜单 */
@@ -768,7 +959,98 @@ class Game {
       onResume: hasRun ? () => this._resumeRun() : null,
       onShop: () => this._openShop(),
       onHangar: () => this._openHangar(),
+      onCodex: () => this._openCodex(),
       onAccount: () => this._openAccount(),
+      onCloud: () => this._openCloud(),
+      onLeaderboard: () => this._openLeaderboard(),
+    });
+  }
+
+  /** 打开图鉴（收集情报 + 里程碑奖励） */
+  _openCodex() {
+    this.audio.init();
+    this.state = GameState.CODEX;
+    this._showPauseBtn(false);
+    this.screens.showCodex(this.save, {
+      // 领取回调只做数据变更 + 落盘, 不重建整页; 界面的按钮/样式由 showCodex 内部局部更新
+      onClaim: (id) => {
+        const res = Codex.claim(this.save, id);
+        if (res) {
+          SaveData.save(this.user.id, this.save);
+          this.audio.levelup();
+        }
+        return res;
+      },
+      onBack: () => this._showMenu(),
+    });
+  }
+
+  // ---------------- 云同步 / 排行榜 ----------------
+
+  /**
+   * 打开云同步界面。opts.notice 用于操作成功后重进时的醒目提示。
+   * 所有网络调用委托给 CloudSync(失败不抛异常, 自动降级), 会改变绑定状态的
+   * 操作(开启/找回/解绑)在成功后重新打开本界面刷新视图。
+   */
+  _openCloud(opts = {}) {
+    this.audio.init();
+    this.state = GameState.CLOUD;
+    this._showPauseBtn(false);
+    const cred = CloudSync.cred();
+    const state = {
+      linked: !!cred,
+      name: cred ? (cred.name || this.user.name) : this.user.name,
+      token: cred ? cred.token : "",
+      notice: opts.notice || "",
+    };
+    this.screens.showCloud(state, {
+      onEnable: async (name) => {
+        const r = await CloudSync.register(name || this.user.name);
+        if (r.ok) this._openCloud({ notice: "云同步已开启！请立即复制并保存下方恢复码, 丢失将无法找回。" });
+        return r;
+      },
+      onLink: async (token) => {
+        const r = await CloudSync.linkByToken(token);
+        if (r.ok) {
+          // 找回成功且云端有存档: 询问是否覆盖本地
+          if (r.save && window.confirm("找回成功! 云端存在存档, 是否下载并覆盖当前本地进度?")) {
+            this._applyCloudSave(r.save);
+          }
+          this._openCloud({ notice: `已连接到云账号${r.name ? "「" + r.name + "」" : ""}。` });
+        }
+        return r;
+      },
+      onUpload: async () => {
+        SaveData.save(this.user.id, this.save); // 确保上传的是最新本地存档
+        return await CloudSync.pushSave(this.save);
+      },
+      onDownload: async () => {
+        const r = await CloudSync.pullSave();
+        if (r.ok && r.save) { this._applyCloudSave(r.save); return { ok: true }; }
+        if (r.ok && !r.save) return { ok: false, error: "云端暂无存档" };
+        return { ok: false, error: r.error || "下载失败" };
+      },
+      onUnlink: () => {
+        CloudSync.unlink();
+        this._openCloud({ notice: "已解绑本设备(云端数据保留)。" });
+      },
+      onBack: () => this._showMenu(),
+    });
+  }
+
+  /** 用云端存档覆盖本地: 经 localStorage + SaveData.load 完整校验, 拒绝任何非法字段 */
+  _applyCloudSave(cloudSave) {
+    SaveData.save(this.user.id, cloudSave);
+    this.save = SaveData.load(this.user.id);
+  }
+
+  /** 打开排行榜(公开, 无需绑定云端) */
+  _openLeaderboard() {
+    this.audio.init();
+    this.state = GameState.LEADERBOARD;
+    this._showPauseBtn(false);
+    this.screens.showLeaderboard(() => CloudSync.leaderboard(100), {
+      onBack: () => this._showMenu(),
     });
   }
 
@@ -878,12 +1160,14 @@ class Game {
     this.state = GameState.SHOP;
     this._showPauseBtn(false);
     this.screens.showShop(this.save, {
+      // 购买只改数据 + 落盘, 不重建整页; 界面刷新由 showShop 内部局部完成, 避免闪动
       onBuy: (id) => {
-        if (MetaProgression.buy(this.save, id)) {
+        const ok = MetaProgression.buy(this.save, id);
+        if (ok) {
           SaveData.save(this.user.id, this.save);
           this.audio.pickup();
         }
-        this._openShop(); // 刷新界面
+        return ok;
       },
       onBack: () => this._showMenu(),
     });
@@ -918,6 +1202,10 @@ class Game {
   _applyUpgrade(u) {
     UpgradeSystem.apply(u, this.player);
     this.particles.text(this.player.x, this.player.y - 40, u.name, u.accent, 20);
+    // 图鉴: 武器解锁项 (id 形如 unlock_xxx) -> 记录到 weapons 分类
+    if (u && u.unlock && typeof u.id === "string" && u.id.startsWith("unlock_")) {
+      Codex.discover(this.save, "weapons", u.id.slice("unlock_".length));
+    }
     this.screens.clear();
     // 优先消耗“战术预载”额外次数，其次是常规经验溢出
     if (this.player.pendingLevels > 0) { this.player.pendingLevels--; this.onLevelUp(); }
@@ -937,6 +1225,8 @@ class Game {
     if (e) {
       e.spawn(type, x, y, hpScale);
       if (e.isBoss) this.bosses.push(e); // 记录当前 Boss 供血条显示（支持并存多个）
+      // 图鉴埋点: 首次遭遇即记录. Boss / 普通分开归类, 界面分区展示.
+      Codex.discover(this.save, e.isBoss ? "bosses" : "enemies", type);
     }
     return e;
   }
@@ -955,6 +1245,8 @@ class Game {
   spawnGem(x, y, value, type = DropType.XP) {
     const g = this._gemPool.obtain();
     if (g) g.spawn(x, y, value, type);
+    // 图鉴埋点: 记录道具类型（经验晶体除外, 不作为收集条目）
+    if (type !== DropType.XP) Codex.discover(this.save, "items", type);
   }
 
   /** 记录一条瞬时电弧光束（电弧链武器用），由主循环衰减、render 绘制 */
@@ -1079,6 +1371,9 @@ class Game {
       this.beams = this.beams.filter((b) => b.life > 0);
     }
 
+    // 移动端主动技能按钮冷却文本同步（低成本, 每帧调用即可）
+    if (this.skillBtn) this._syncSkillBtn();
+
     this.render();
 
     requestAnimationFrame((t) => this.loop(t));
@@ -1177,6 +1472,17 @@ class Game {
     this.save.totals.bossKills += this.stats.bossKills;
     this.save.totals.cores += reward;
     SaveData.save(this.user.id, this.save);
+
+    // 云同步: 已绑定则后台提交成绩 + 上传存档(fire-and-forget, 失败静默, 不阻塞结算演出)
+    if (CloudSync.isLinked()) {
+      CloudSync.submitScore({
+        time: Math.floor(this.stats.time),
+        kills: this.stats.kills,
+        bossKills: this.stats.bossKills,
+        level: this.stats.level,
+      });
+      CloudSync.pushSave(this.save);
+    }
 
     setTimeout(() => this.screens.showGameOver(this.stats, { reward, shardReward, records, save: this.save }, {
       onRestart: () => this.start(),
@@ -1697,6 +2003,10 @@ function defaults() {
       selected: "drift",            // 当前选中外观
       lastFreeDraw: "",             // 上次领取每日免费抽卡的本地日期（YYYY-MM-DD）
     },
+    // 图鉴：局内首次遭遇的敌人/Boss/武器/道具, 达到里程碑可领取奖励
+    codex: {
+      enemies: {}, bosses: {}, weapons: {}, items: {}, claimed: {},
+    },
   };
 }
 
@@ -1753,6 +2063,22 @@ const SaveData = {
         // 仅接受 YYYY-MM-DD 形式的日期字符串，其余忽略
         if (typeof parsed.skins.lastFreeDraw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.skins.lastFreeDraw)) {
           d.skins.lastFreeDraw = parsed.skins.lastFreeDraw;
+        }
+      }
+      // 图鉴：仅接受 boolean 标记的对象, 忽略任意其它结构避免存档污染
+      if (parsed.codex && typeof parsed.codex === "object") {
+        for (const cat of ["enemies", "bosses", "weapons", "items", "claimed"]) {
+          const src = parsed.codex[cat];
+          if (src && typeof src === "object") {
+            const dst = {};
+            for (const k of Object.keys(src)) {
+              // key 长度限制, 避免异常长字段
+              if (typeof k === "string" && k.length > 0 && k.length <= 64 && src[k] === true) {
+                dst[k] = true;
+              }
+            }
+            d.codex[cat] = dst;
+          }
         }
       }
     } catch (_e) {
@@ -2277,6 +2603,8 @@ class Player {
 
     // 当前外观（默认漂移者三角机，开局由 Skins.applyTo 覆盖为选中外观）
     this.skin = { id: "drift", shape: "arrow", accent: "#00f0ff", star: 1 };
+    // 主动技能: 由特殊皮肤 perk 注入; 未装备主动皮肤时保持 null
+    this.activeSkill = null;
   }
 
   get alive() { return this.hp > 0; }
@@ -2307,6 +2635,8 @@ class Player {
     if (this.invuln > 0) this.invuln -= dt;
     if (this.regen > 0) this.heal(this.regen * dt);
     this.animT += dt;
+    // 主动技能冷却递减（不受时间缩放外的额外影响; 空格键释放在 Game 层触发）
+    if (this.activeSkill && this.activeSkill.timer > 0) this.activeSkill.timer -= dt;
 
     // 移动
     this.moveDir = input.getMoveVector();
@@ -2330,6 +2660,45 @@ class Player {
     this.y = clamp(this.y, this.radius, CONFIG.world.height - this.radius);
 
     this._updateWeapons(dt, game);
+  }
+
+  // ---------------- 主动技能 ----------------
+  /**
+   * 释放主动技能「归零协议」: 对屏内敌人造成范围重创, 清屏敌方弹幕, 短暂无敌 + 演出.
+   * 冷却结束才能触发, 触发后按当前 cooldownMul 缩短的冷却重新计时.
+   */
+  releaseActiveSkill(game) {
+    const sk = this.activeSkill;
+    if (!sk || sk.timer > 0) return false;
+    sk.timer = sk.cooldown * this.cooldownMul;
+
+    // 效果 1: 对屏内敌人造成重创（Boss 也吃, 但伤害有上限, 避免一键秒 Boss）
+    const cam = game.camera;
+    const pad = 40;
+    const minX = cam.x - pad, minY = cam.y - pad;
+    const maxX = cam.x + game.viewW + pad, maxY = cam.y + game.viewH + pad;
+    const dmgNormal = 9999;
+    const dmgBoss = 240 + this.level * 12; // 缓和的 Boss 伤害曲线
+    for (const e of game.enemies) {
+      if (!e.active) continue;
+      if (e.x < minX || e.x > maxX || e.y < minY || e.y > maxY) continue;
+      game.damageEnemy(e, e.isBoss ? dmgBoss : dmgNormal, false);
+    }
+    // 效果 2: 清屏所有敌方弹幕
+    for (const b of game.enemyProjectiles) b.active = false;
+
+    // 效果 3: 短暂无敌 + 屏幕演出
+    this.invuln = Math.max(this.invuln, 1.4);
+    game.screenFlash(0.75);
+    game.slowmo(0.35);
+    game.camera.shake(28);
+    const colors = ["#7df9ff", "#00f0ff", "#ffffff"];
+    for (let w = 0; w < 3; w++) {
+      game.particles.burst(this.x, this.y, colors[w], 40, 260 + w * 160, 5, 1.0);
+    }
+    game.particles.text(this.x, this.y - 40, "归零协议", "#7df9ff", 30);
+    if (game.audio.bossKill) game.audio.bossKill();
+    return true;
   }
 
   // ---------------- 武器逻辑 ----------------
@@ -2730,6 +3099,214 @@ if (document.readyState === "loading") {
 
 };
 
+__defs["/Users/fiona/Desktop/neon-survivors/js/systems/Codex.js"] = function (exports, require) {
+/**
+ * Codex.js — 图鉴系统（局外收集元素）。
+ *
+ * 玩家在对局中「首次遭遇」敌人/Boss/武器/道具即视为发掘, 已发掘的以对应符号 + 主题色展示,
+ * 未发掘的以黑色轮廓遮罩显示. 图鉴总数达到收集里程碑时可领取奖励（棱牌/核心/皮肤）,
+ * 满收集额外解锁「万象编纂」传说皮肤 + 局内主动技能（归零协议），构成额外的养成闭环.
+ *
+ * 数据结构（save.codex）：
+ *   enemies / bosses / weapons / items —— { [id]: true } 已发掘集合
+ *   claimed —— { [milestoneId]: true } 已领取的里程碑奖励
+ *
+ * 兼容：字段缺失时按空集合处理, 老存档自动升级.
+ */
+const {CONFIG} = require("/Users/fiona/Desktop/neon-survivors/js/config.js");
+
+// ---------------- 图鉴专属的图标 / 描述表 ----------------
+// 与 CONFIG 保持单一数据源: 名字/主题色从 CONFIG 派生; 符号/描述图鉴单独维护, 便于文案调整.
+// 图标选取原则: 1) 主流字体都能渲染的 Unicode 几何符号, 避免"豆腐"; 2) 全局唯一, 不重复.
+
+const ENEMY_META = {
+  chaser:   { symbol: "▲", desc: "直线追击的三角杂兵\n成群出现" },
+  rusher:   { symbol: "◆", desc: "菱形高速冲刺\n侧向摆动难预判" },
+  tank:     { symbol: "⬣", desc: "厚重六边形\n血厚速慢" },
+  splitter: { symbol: "⬟", desc: "阵亡后分裂为两个小裂片" },
+};
+
+const BOSS_META = {
+  boss_nucleus: { symbol: "❖", desc: "稳健型: 环形弹幕 / 扇形散射 / 召唤增援" },
+  boss_flux:    { symbol: "✷", desc: "敏捷型: 双臂螺旋 + 突进扇射\n节奏急促" },
+  boss_void:    { symbol: "⬢", desc: "沉重型: 双层环波 + 宽域横扫\n召唤精英" },
+};
+
+const WEAPON_META = {
+  blaster: { symbol: "➤", desc: "开局主武器\n自动瞄准最近敌人" },
+  orbit:   { symbol: "◉", desc: "环绕光球\n碰触造成伤害" },
+  aura:    { symbol: "❂", desc: "身周持续范围灼烧" },
+  nova:    { symbol: "✸", desc: "周期性环形弹幕清场" },
+  chain:   { symbol: "⚡", desc: "电弧在最近多个敌人间跳跃" },
+};
+
+// 道具符号刻意与武器区分: 医疗 / 磁吸 / 湮灭. 湮灭改用星芒符号, 避免和超新星撞图标.
+const ITEM_META = [
+  { id: "HEAL",   name: "医疗补给", color: "#aaff00", symbol: "✚", desc: "拾取即回 25 生命" },
+  { id: "MAGNET", name: "引力磁吸", color: "#ffd23f", symbol: "⇩", desc: "吸附全场经验晶体" },
+  { id: "BOMB",   name: "湮灭炸弹", color: "#ff2bd6", symbol: "☀", desc: "对周围敌人毁灭打击\nBoss 重伤" },
+];
+
+// ---------------- 条目列表（从 CONFIG 派生 + 图鉴表补充） ----------------
+const _enemyList = () => Object.entries(CONFIG.enemies)
+  .filter(([, def]) => !def.boss)
+  .map(([id, def]) => ({
+    id, name: def.name, color: def.color,
+    symbol: (ENEMY_META[id] && ENEMY_META[id].symbol) || "▲",
+    desc:   (ENEMY_META[id] && ENEMY_META[id].desc)   || "",
+  }));
+
+const _bossList = () => Object.entries(CONFIG.enemies)
+  .filter(([, def]) => def.boss)
+  .map(([id, def]) => ({
+    id, name: def.name, color: def.color,
+    symbol: (BOSS_META[id] && BOSS_META[id].symbol) || "◆",
+    desc:   (BOSS_META[id] && BOSS_META[id].desc)   || "",
+  }));
+
+const _weaponList = () => Object.entries(CONFIG.weapons)
+  .map(([id, def]) => ({
+    id, name: def.name, color: def.accent,
+    symbol: (WEAPON_META[id] && WEAPON_META[id].symbol) || def.icon,
+    desc:   (WEAPON_META[id] && WEAPON_META[id].desc)   || "",
+  }));
+
+const _itemList = () => ITEM_META.map((it) => ({ ...it }));
+
+/** 分类元信息（顺序即界面展示顺序） */
+const CATEGORIES = [
+  { key: "enemies", title: "敌 · 常见战斗单元", list: _enemyList },
+  { key: "bosses",  title: "Boss · 阶段化威胁", list: _bossList },
+  { key: "weapons", title: "武器 · 舰载火力",   list: _weaponList },
+  { key: "items",   title: "道具 · 战场拾取",   list: _itemList },
+];
+
+/**
+ * 收集里程碑：按总发掘数触发的阶段性奖励.
+ * 奖励种类：shards(棱牌) / cores(核心) / skin(解锁皮肤 id) / active(是否附带主动技能提示).
+ */
+const MILESTONES = [
+  {
+    id: "m1", label: "初识", need: 3,
+    reward: { shards: 100 },
+    desc: "初次接触 3 种目标, 情报库正在启动.",
+  },
+  {
+    id: "m2", label: "见闻录", need: 7,
+    reward: { shards: 300 },
+    desc: "情报覆盖过半, 编纂协议持续记录.",
+  },
+  {
+    id: "m3", label: "深度勘测", need: 12,
+    reward: { cores: 500 },
+    desc: "深入战场核心, 收获额外暗物质核心.",
+  },
+  {
+    id: "m4", label: "万象编纂", need: -1, // -1 表示"全收集"，运行时按 totalCount 判定
+    reward: { skin: "omniscient", active: true },
+    desc: "收录全部目标: 解锁传说皮肤「万象编纂」及其主动技能「归零协议」.",
+  },
+];
+
+/** 统计图鉴条目总数 */
+function totalCount() {
+  return CATEGORIES.reduce((s, c) => s + c.list().length, 0);
+}
+
+class Codex {
+  static categories() { return CATEGORIES; }
+  static milestones() { return MILESTONES; }
+  static totalCount() { return totalCount(); }
+
+  /** 保证 save.codex 结构完整（老存档兼容, 由 SaveData.load 与本方法双保险）*/
+  static _ensure(save) {
+    if (!save.codex || typeof save.codex !== "object") save.codex = {};
+    for (const cat of ["enemies", "bosses", "weapons", "items", "claimed"]) {
+      if (!save.codex[cat] || typeof save.codex[cat] !== "object") save.codex[cat] = {};
+    }
+    return save.codex;
+  }
+
+  static discovered(save, cat, id) {
+    return !!(save.codex && save.codex[cat] && save.codex[cat][id]);
+  }
+
+  /**
+   * 记录一次发现. 返回是否为「首次发现」（用于弹提示 / 触发音效）.
+   * 内部会校验 id 是否属于当前分类的有效条目, 避免拼错 id 污染存档.
+   */
+  static discover(save, cat, id) {
+    if (!id) return false;
+    const list = CATEGORIES.find((c) => c.key === cat);
+    if (!list) return false;
+    const entry = list.list().find((e) => e.id === id);
+    if (!entry) return false;
+    Codex._ensure(save);
+    if (save.codex[cat][id]) return false;
+    save.codex[cat][id] = true;
+    return true;
+  }
+
+  /** 计算当前收集进度 { owned, total, byCategory: {cat: {owned,total}} } */
+  static progress(save) {
+    Codex._ensure(save);
+    let owned = 0;
+    let total = 0;
+    const byCategory = {};
+    for (const c of CATEGORIES) {
+      const items = c.list();
+      let o = 0;
+      for (const e of items) if (save.codex[c.key][e.id]) o++;
+      byCategory[c.key] = { owned: o, total: items.length };
+      owned += o; total += items.length;
+    }
+    return { owned, total, byCategory };
+  }
+
+  /** 里程碑实际所需数量（-1 特殊值代表全收集） */
+  static needOf(m) {
+    return m.need > 0 ? m.need : totalCount();
+  }
+
+  static claimed(save, id) {
+    Codex._ensure(save);
+    return !!save.codex.claimed[id];
+  }
+
+  static reached(save, m) {
+    return Codex.progress(save).owned >= Codex.needOf(m);
+  }
+
+  /**
+   * 领取里程碑奖励. 返回奖励详情或 null（未达成 / 已领取 / 无效 id）.
+   * 皮肤类奖励通过写入 save.skins.owned 完成解锁, 保持与机库一致.
+   */
+  static claim(save, id) {
+    const m = MILESTONES.find((x) => x.id === id);
+    if (!m) return null;
+    if (!Codex.reached(save, m)) return null;
+    if (Codex.claimed(save, id)) return null;
+    Codex._ensure(save);
+    save.codex.claimed[id] = true;
+
+    const r = m.reward || {};
+    if (r.shards) {
+      if (!save.skins || typeof save.skins !== "object") save.skins = { shards: 0, owned: {}, selected: "drift", lastFreeDraw: "" };
+      save.skins.shards = (save.skins.shards || 0) + r.shards;
+    }
+    if (r.cores) save.cores = (save.cores || 0) + r.cores;
+    if (r.skin) {
+      if (!save.skins.owned) save.skins.owned = {};
+      // 图鉴解锁皮肤默认 1 星（与首抽一致, 后续在机库继续升星）
+      if (!save.skins.owned[r.skin]) save.skins.owned[r.skin] = 1;
+    }
+    return { id, label: m.label, need: Codex.needOf(m), reward: { ...r } };
+  }
+}
+
+Object.assign(exports, { CATEGORIES, Codex });
+};
+
 __defs["/Users/fiona/Desktop/neon-survivors/js/systems/CollisionSystem.js"] = function (exports, require) {
 /**
  * CollisionSystem.js — 碰撞检测系统。
@@ -3079,6 +3656,29 @@ const SKINS = [
     },
     perkText: (s) => `暴击 +${4 * s}% · 攻速 +${Math.round((1 / Math.pow(0.97, s) - 1) * 100)}% · 击杀吸血 +${(0.6 * s).toFixed(1)}`,
   },
+  // ---------------- 图鉴解锁（不参与抽卡池, 仅通过 100% 图鉴收集获得） ----------------
+  {
+    id: "omniscient", name: "万象编纂", rarity: "legendary", shape: "codex", accent: "#7df9ff",
+    desc: "由所有战场情报编织而成的智能核心, 携带主动技能「归零协议」.",
+    hidden: true, // 不参与抽卡权重
+    perk: (p, s) => {
+      // 全面但克制的加成; 主打的是主动技能, 而非常规数值.
+      p.damageMul *= 1 + 0.03 * s;
+      p.critChance = Math.min(1, p.critChance + 0.02 * s);
+      // 装备该皮肤即获得主动技能: 空格释放, 会经玩家的 cooldownMul 缩短冷却.
+      p.activeSkill = {
+        id: "zeroProtocol",
+        name: "归零协议",
+        icon: "◎",
+        cooldown: 30,         // 基础冷却 30s
+        maxCooldown: 30,
+        timer: 0,             // 就绪
+        // 效果: 对屏内敌人造成范围重创, 清屏敌方弹幕, 短暂无敌.
+        // (具体实现在 Player.releaseActiveSkill 中调用 game 服务方法, 保持解耦)
+      };
+    },
+    perkText: (s) => `伤害 +${3 * s}% · 暴击 +${2 * s}% · 附带主动技能「归零协议」`,
+  },
 ];
 
 const BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]));
@@ -3157,7 +3757,7 @@ class Skins {
     return Skins.drawOne(save);
   }
 
-  /** 按稀有度权重随机抽取一个外观 */
+  /** 按稀有度权重随机抽取一个外观（跳过隐藏皮肤: 仅通过图鉴等特殊途径获取） */
   static _rollSkin() {
     const total = Object.values(RARITY).reduce((a, r) => a + r.weight, 0);
     let r = Math.random() * total;
@@ -3166,8 +3766,10 @@ class Skins {
       if (r < rar.weight) { picked = rar.key; break; }
       r -= rar.weight;
     }
-    const pool = SKINS.filter((s) => s.rarity === picked);
-    return pool[Math.floor(Math.random() * pool.length)];
+    const pool = SKINS.filter((s) => s.rarity === picked && !s.hidden);
+    // 该稀有度全部为隐藏皮肤时兜底到普通池, 保证抽卡不会返回 undefined
+    const safePool = pool.length ? pool : SKINS.filter((s) => s.rarity === "common" && !s.hidden);
+    return safePool[Math.floor(Math.random() * safePool.length)];
   }
 
   /**
@@ -3293,6 +3895,34 @@ class Skins {
         ctx.fillStyle = "#05060e";
         ctx.beginPath(); ctx.arc(0, 0, r * 0.4, 0, TAU); ctx.fill();
         return; // 已绘制核心，直接返回
+      }
+      case "codex": { // 万象编纂: 三层同心多边形 + 十字光轴, 象征"编纂/汇总"
+        // 外层六边框
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = -Math.PI / 2 + i * (TAU / 6);
+          const px = Math.cos(a) * r * 1.05, py = Math.sin(a) * r * 1.05;
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.closePath(); ctx.stroke();
+        // 中层四芒
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 0.85); ctx.lineTo(r * 0.42, 0);
+        ctx.lineTo(0, r * 0.85); ctx.lineTo(-r * 0.42, 0);
+        ctx.closePath();
+        ctx.globalAlpha = 0.35; ctx.fill();
+        ctx.globalAlpha = 1; ctx.stroke();
+        // 十字光轴
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 1.05); ctx.lineTo(0, r * 1.05);
+        ctx.moveTo(-r * 1.05, 0); ctx.lineTo(r * 1.05, 0);
+        ctx.stroke();
+        // 中心亮点
+        ctx.shadowBlur = 14; ctx.shadowColor = color;
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, TAU); ctx.fill();
+        break;
       }
       case "arrow":
       default: { // 经典侦察三角
@@ -3727,9 +4357,48 @@ class HUD {
     // ---- 左下：已装备武器 ----
     this._weapons(ctx, player, H);
 
+    // ---- 右下：主动技能冷却盘（仅当皮肤附带主动技能时显示） ----
+    if (player.activeSkill) this._activeSkill(ctx, player, W, H);
+
     // ---- 触摸虚拟摇杆 ----
     this._joystick(ctx, game.input);
 
+    ctx.restore();
+  }
+
+  /** 主动技能：右下角圆环冷却盘 + 图标 + 就绪时提示按键 */
+  _activeSkill(ctx, player, W, H) {
+    const sk = player.activeSkill;
+    const cd = sk.cooldown || 1;
+    const ready = sk.timer <= 0;
+    const ratio = Math.max(0, Math.min(1, 1 - sk.timer / cd));
+    const r = 26;
+    const cx = W - 40;
+    const cy = H - 52;
+    const color = ready ? "#7df9ff" : "#3a4356";
+    ctx.save();
+    // 底盘
+    ctx.fillStyle = "rgba(10,14,30,0.85)";
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+    // 冷却进度圆环（从顶部顺时针填充）
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = ready ? 12 : 0; ctx.shadowColor = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r - 2, -Math.PI / 2, -Math.PI / 2 + TAU * ratio);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // 图标
+    ctx.fillStyle = color;
+    ctx.font = "700 22px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(sk.icon || "◎", cx, cy + 1);
+    // 就绪提示 / 剩余秒数
+    ctx.font = "600 10px 'JetBrains Mono', monospace";
+    ctx.fillStyle = ready ? "#aaff00" : "#8fa9c8";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(ready ? "SPACE" : `${sk.timer.toFixed(1)}s`, cx, cy + r + 4);
     ctx.restore();
   }
 
@@ -3923,6 +4592,7 @@ const {formatTime} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.
 const {UpgradeSystem} = require("/Users/fiona/Desktop/neon-survivors/js/systems/UpgradeSystem.js");
 const {MetaProgression} = require("/Users/fiona/Desktop/neon-survivors/js/systems/MetaProgression.js");
 const {Skins, RARITY, MAX_STAR} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
+const {Codex} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Codex.js");
 const {Account} = require("/Users/fiona/Desktop/neon-survivors/js/core/Account.js");
 
 /** HTML 转义：防止用户输入的昵称 / ID 破坏 DOM 结构或注入脚本 */
@@ -3969,12 +4639,9 @@ class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, user, { onStart, onResume, onShop, onHangar, onAccount }) {
+  showMenu(save, user, { onStart, onResume, onShop, onHangar, onCodex, onAccount, onCloud, onLeaderboard }) {
     this.clear();
     const b = save.best;
-    const resumeBtn = onResume
-      ? `<button class="btn" id="btn-resume">↩ 继续上局</button>`
-      : "";
     const userBar = user
       ? `
       <div class="user-bar" id="user-bar" title="点击切换或管理玩家">
@@ -3983,6 +4650,20 @@ class Screens {
         <span class="user-switch">切换 ▸</span>
       </div>`
       : "";
+    // 主行按钮:
+    //  - 有续玩快照: [继续上局] + [重新开始], 两颗并列
+    //  - 无续玩快照: 单独一颗 [开始游戏]
+    // 次要行(第二排): 机库 / 强化实验室 / 图鉴
+    // 颜色语义:
+    //  · 开始游戏 -> 品红 (btn-primary, 与游戏主强调色一致)
+    //  · 重新开始 -> 青 (btn-restart, 与"继续上局"区分, 视觉降级)
+    //  · 继续上局 -> 品红 (与开始游戏同级, 都是主行动)
+    const primaryRow = onResume
+      ? `
+        <button class="btn btn-primary" id="btn-resume">↩ 继续上局</button>
+        <button class="btn btn-restart" id="btn-start">▶ 重新开始</button>
+      `
+      : `<button class="btn btn-primary" id="btn-start">▶ 开始游戏</button>`;
     const el = this._make(`
       ${userBar}
       <div class="sub">ROGUELITE · SURVIVOR · 霓虹幸存者</div>
@@ -3998,11 +4679,15 @@ class Screens {
         <span>最高等级 <b>${b.level}</b></span>
         <span>击败母核 <b>${b.bossKills}</b></span>
       </div>
-      <div class="menu-btns">
-        ${resumeBtn}
-        <button class="btn ${onResume ? "btn-2" : ""}" id="btn-start">▶ ${onResume ? "重新开始" : "开始游戏"}</button>
-        <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
+      <div class="menu-btns menu-primary">${primaryRow}</div>
+      <div class="menu-btns menu-secondary">
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
+        <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
+        <button class="btn btn-codex" id="btn-codex">▤ 图鉴</button>
+      </div>
+      <div class="menu-btns menu-cloud">
+        <button class="btn btn-rank" id="btn-rank">🏆 排行榜</button>
+        <button class="btn btn-sync" id="btn-cloud">☁ 云同步</button>
       </div>
       <div class="hint">${this.isTouch
         ? "拖动屏幕移动 · 点击右上角按钮暂停<br>武器自动开火"
@@ -4012,7 +4697,10 @@ class Screens {
     el.querySelector("#btn-start").addEventListener("click", onStart);
     el.querySelector("#btn-shop").addEventListener("click", onShop);
     el.querySelector("#btn-hangar").addEventListener("click", onHangar);
+    if (onCodex) el.querySelector("#btn-codex").addEventListener("click", onCodex);
     if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
+    if (onCloud) el.querySelector("#btn-cloud").addEventListener("click", onCloud);
+    if (onLeaderboard) el.querySelector("#btn-rank").addEventListener("click", onLeaderboard);
     if (onAccount) {
       const bar = el.querySelector("#user-bar");
       if (bar) bar.addEventListener("click", onAccount);
@@ -4025,34 +4713,63 @@ class Screens {
     const el = this._make(`
       <div class="sub">META LAB · 强化实验室</div>
       <h2 class="neon-title">永久强化</h2>
-      <div class="cores-balance"><span class="cur-core">◆ ${save.cores}</span> <span class="lbl">可用核心</span></div>
+      <div class="cores-balance"><span class="cur-core">◆ <span class="cur-core-amt">${save.cores}</span></span> <span class="lbl">可用核心</span></div>
       <div class="shop-list"></div>
       <button class="btn" id="btn-back">← 返回</button>
       <div class="hint">永久加成在每局开局自动生效 · 失败也在变强</div>
-    `);
+    `, "shop-screen");
     const list = el.querySelector(".shop-list");
-    for (const m of MetaProgression.list()) {
+    const coreAmtEl = el.querySelector(".cur-core-amt");
+
+    // 按钮态刷新：等级 / 花费 / 是否可购. 用于购买后仅更新受影响 DOM, 避免整页重绘闪动.
+    const refreshRow = (row, m) => {
       const lv = MetaProgression.levelOf(save, m.id);
       const cost = MetaProgression.costOf(save, m.id);
       const maxed = cost == null;
       const affordable = !maxed && save.cores >= cost;
+      // 等级文本
+      const lvEl = row.querySelector(".shop-lv");
+      if (lvEl) lvEl.textContent = `Lv.${lv}/${m.max}`;
+      // 进度点
+      const pipsEl = row.querySelector(".pips");
+      if (pipsEl) pipsEl.innerHTML = this._pips(lv, m.max, m.accent);
+      // 购买按钮: 只改 class/文本/disabled, 不换 DOM 节点 (监听器保留)
+      const btn = row.querySelector(".shop-buy");
+      if (btn) {
+        btn.classList.toggle("maxed", maxed);
+        btn.classList.toggle("poor", !maxed && !affordable);
+        btn.disabled = maxed || !affordable;
+        btn.textContent = maxed ? "满级" : `◆ ${cost}`;
+      }
+    };
+    const refreshAll = () => {
+      if (coreAmtEl) coreAmtEl.textContent = String(save.cores);
+      for (const row of list.querySelectorAll(".shop-row")) {
+        const id = row.dataset.metaId;
+        const m = MetaProgression.list().find((x) => x.id === id);
+        if (m) refreshRow(row, m);
+      }
+    };
+
+    for (const m of MetaProgression.list()) {
       const row = document.createElement("div");
       row.className = "shop-row";
+      row.dataset.metaId = m.id;
       row.style.setProperty("--accent", m.accent);
       row.innerHTML = `
         <div class="shop-icon">${m.icon}</div>
         <div class="shop-info">
-          <div class="shop-name">${m.name} <span class="shop-lv">Lv.${lv}/${m.max}</span></div>
+          <div class="shop-name">${m.name} <span class="shop-lv"></span></div>
           <div class="shop-effect">${m.effect}</div>
-          <div class="pips">${this._pips(lv, m.max, m.accent)}</div>
+          <div class="pips"></div>
         </div>
-        <button class="shop-buy ${maxed ? "maxed" : affordable ? "" : "poor"}" ${maxed || !affordable ? "disabled" : ""}>
-          ${maxed ? "满级" : `◆ ${cost}`}
-        </button>
+        <button class="shop-buy" type="button"></button>
       `;
-      if (!maxed && affordable) {
-        row.querySelector(".shop-buy").addEventListener("click", () => onBuy(m.id));
-      }
+      // 一次性绑定按钮点击, 内部检查是否可购; 购买后局部刷新, 不重建整页.
+      row.querySelector(".shop-buy").addEventListener("click", () => {
+        if (onBuy(m.id)) refreshAll();
+      });
+      refreshRow(row, m);
       list.appendChild(row);
     }
     this.root.appendChild(el);
@@ -4131,7 +4848,7 @@ class Screens {
       <div class="stat-line">击杀总数 <b>${stats.kills}</b>${tag(records.kills)}</div>
       <div class="stat-line">到达等级 <b>${stats.level}</b>${tag(records.level)}</div>
       <div class="stat-line">击败母核 <b>${stats.bossKills}</b>${tag(records.bossKills)}</div>
-      <div class="reward-box">本局获得 <b>◆ ${reward}</b> &nbsp;·&nbsp; <b class="shard-amt">✦ ${shardReward}</b></div>
+      <div class="reward-box">本局获得 <b class="cur-core">◆ ${reward}</b> &nbsp;·&nbsp; <b class="shard-amt">✦ ${shardReward}</b></div>
       <div class="menu-btns">
         <button class="btn" id="btn-restart">↻ 再来一局</button>
         <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
@@ -4279,6 +4996,114 @@ class Screens {
     el.querySelector("#btn-close").addEventListener("click", onClose);
   }
 
+  // ---------------- 图鉴 ----------------
+
+  /**
+   * 图鉴界面: 四类条目网格 + 收集度进度条 + 里程碑奖励条目.
+   * 未发掘条目: 黑色轮廓 + 问号占位; 已发掘: 主题色符号 + 名称.
+   */
+  showCodex(save, { onClaim, onBack }) {
+    this.clear();
+    const prog = Codex.progress(save);
+    const el = this._make(`
+      <div class="sub">CODEX · 图鉴</div>
+      <h2 class="neon-title">情报库</h2>
+      <div class="codex-prog">
+        <div class="cp-bar"><div class="cp-fill" style="width:${prog.total ? (prog.owned / prog.total * 100).toFixed(1) : 0}%"></div></div>
+        <div class="cp-text">收集进度 <b>${prog.owned}</b> / ${prog.total}</div>
+      </div>
+      <div class="codex-body"></div>
+      <div class="codex-achv-title">
+        <span class="cat-tag">ACHIEVEMENTS</span>
+        <span class="cat-cn">成就 · 收集里程碑</span>
+      </div>
+      <div class="codex-milestones"></div>
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+      <div class="hint">局内首次遭遇即录入图鉴 · 未发掘条目以黑色轮廓显示 · 达成里程碑可领取奖励</div>
+    `, "codex-screen");
+
+    const body = el.querySelector(".codex-body");
+    for (const cat of Codex.categories()) {
+      const items = cat.list();
+      const meta = prog.byCategory[cat.key] || { owned: 0, total: items.length };
+      const section = document.createElement("div");
+      section.className = "codex-section";
+      section.innerHTML = `
+        <div class="cs-header">
+          <div class="cs-title">${cat.title}</div>
+          <div class="cs-count">${meta.owned}/${meta.total}</div>
+        </div>
+        <div class="cs-grid"></div>
+      `;
+      const grid = section.querySelector(".cs-grid");
+      for (const entry of items) {
+        const owned = Codex.discovered(save, cat.key, entry.id);
+        const cell = document.createElement("div");
+        cell.className = `codex-cell${owned ? " owned" : " locked"}`;
+        cell.style.setProperty("--accent", entry.color);
+        // 已发掘: 主题色符号 + 名称 + 描述; 未发掘: 黑色轮廓问号 + ??? 占位
+        cell.innerHTML = `
+          <div class="cc-sym">${owned ? entry.symbol : "?"}</div>
+          <div class="cc-name">${owned ? entry.name : "???"}</div>
+          <div class="cc-desc">${owned ? (entry.desc || "") : "尚未发掘"}</div>
+        `;
+        grid.appendChild(cell);
+      }
+      body.appendChild(section);
+    }
+
+    // 里程碑奖励条目：达成可领取 / 已领取 / 未达成.
+    // 领取时只做局部 DOM 更新（不整页重建）, 避免闪动.
+    const msBox = el.querySelector(".codex-milestones");
+    const buildMilestoneRow = (m) => {
+      const need = Codex.needOf(m);
+      const reached = prog.owned >= need;
+      const claimed = Codex.claimed(save, m.id);
+      const row = document.createElement("div");
+      row.className = `cm-row${claimed ? " claimed" : reached ? " ready" : ""}`;
+      row.dataset.mid = m.id;
+      const rw = m.reward || {};
+      const rewardText = [
+        rw.shards ? `✦ ${rw.shards}` : null,
+        rw.cores ? `◆ ${rw.cores}` : null,
+        rw.skin ? `皮肤「${(Skins.get(rw.skin) || {}).name || rw.skin}」` : null,
+        rw.active ? "主动技能" : null,
+      ].filter(Boolean).join(" · ");
+      row.innerHTML = `
+        <div class="cm-info">
+          <div class="cm-title">${m.label} <span class="cm-need">${need} 项</span></div>
+          <div class="cm-desc">${m.desc}</div>
+          <div class="cm-reward">奖励: ${rewardText || "—"}</div>
+        </div>
+        <div class="cm-action"></div>
+      `;
+      const action = row.querySelector(".cm-action");
+      if (claimed) {
+        action.innerHTML = `<span class="cm-claimed">已领取</span>`;
+      } else if (reached) {
+        const btn = document.createElement("button");
+        btn.className = "cm-claim";
+        btn.textContent = "领取";
+        btn.addEventListener("click", () => {
+          const res = onClaim(m.id);
+          if (!res) return;
+          // 局部切换: 该行从 ready -> claimed, 按钮换为"已领取"文案
+          row.classList.remove("ready");
+          row.classList.add("claimed");
+          action.innerHTML = `<span class="cm-claimed">已领取</span>`;
+        });
+        action.appendChild(btn);
+      } else {
+        action.innerHTML = `<span class="cm-pending">${prog.owned} / ${need}</span>`;
+      }
+      return row;
+    };
+    for (const m of Codex.milestones()) msBox.appendChild(buildMilestoneRow(m));
+
+    this.root.appendChild(el);
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+  }
+
   // ---------------- 账号管理 ----------------
 
   /**
@@ -4363,6 +5188,199 @@ class Screens {
 
     el.querySelector("#btn-back").addEventListener("click", onBack);
     this.root.appendChild(el);
+  }
+
+  // ---------------- 云同步 ----------------
+
+  /**
+   * 云同步界面: 未绑定时可「开启云同步(注册)」或「用恢复码找回」; 已绑定时可查看/复制恢复码、
+   * 上传本地存档到云、下载云存档覆盖本地、解绑本设备。
+   *
+   * 所有网络回调(onEnable/onLink/onUpload/onDownload)均返回 Promise<{ok, error?}>;
+   * 会改变绑定状态的操作(开启/找回/解绑)由上层(Game)在成功后重新打开本界面, 这里不自行重建。
+   * cloud-screen 已在 CSS 关闭 backdrop-filter, 局部文本更新不会触发整屏闪动。
+   */
+  showCloud(state, { onEnable, onLink, onUpload, onDownload, onUnlink, onBack }) {
+    this.clear();
+    const linked = !!state.linked;
+    const notice = state.notice
+      ? `<div class="cloud-notice">${esc(state.notice)}</div>`
+      : "";
+
+    const unlinkedHTML = `
+      <div class="cloud-card">
+        <div class="cc-title">开启云同步</div>
+        <div class="cc-desc">首次开启会生成一个「恢复码」, 凭它可在任意设备找回你的存档与排行榜成绩。</div>
+        <div class="cloud-form">
+          <label>昵称(排行榜显示)</label>
+          <input id="cloud-name" maxlength="16" placeholder="指挥官" autocomplete="off" value="${esc(state.name || "")}" />
+        </div>
+        <button class="btn btn-primary" id="btn-enable">☁ 开启云同步</button>
+      </div>
+      <div class="cloud-sep">— 已有恢复码？在下方找回 —</div>
+      <div class="cloud-card">
+        <div class="cloud-form">
+          <label>恢复码</label>
+          <input id="cloud-token" placeholder="粘贴你的恢复码" autocomplete="off" />
+        </div>
+        <button class="btn btn-2" id="btn-link">↩ 用恢复码找回</button>
+      </div>`;
+
+    const linkedHTML = `
+      <div class="cloud-card">
+        <div class="cc-row"><span class="cc-k">云账号</span><span class="cc-v">${esc(state.name || "指挥官")}</span></div>
+        <div class="cc-row">
+          <span class="cc-k">恢复码</span>
+          <span class="cc-v cloud-token" id="cloud-token-val">••••••••••••••••</span>
+          <button class="cc-mini" id="btn-reveal">显示</button>
+          <button class="cc-mini" id="btn-copy">复制</button>
+        </div>
+      </div>
+      <div class="cloud-actions">
+        <button class="btn btn-primary" id="btn-upload">⬆ 上传本地到云</button>
+        <button class="btn btn-2" id="btn-download">⬇ 下载云覆盖本地</button>
+      </div>
+      <button class="btn btn-quit" id="btn-unlink">解绑此设备</button>`;
+
+    const el = this._make(`
+      <div class="sub">CLOUD SYNC · 云端同步</div>
+      <h2 class="neon-title">☁ 云存档</h2>
+      ${notice}
+      <div class="cloud-body">${linked ? linkedHTML : unlinkedHTML}</div>
+      <div class="cloud-status" id="cloud-status"></div>
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+      <div class="hint">恢复码是找回云存档的唯一凭证, 丢失将无法找回, 请妥善保存</div>
+    `, "cloud-screen");
+    this.root.appendChild(el);
+
+    const statusEl = el.querySelector("#cloud-status");
+    const setStatus = (msg, kind = "") => {
+      statusEl.textContent = msg || "";
+      statusEl.className = `cloud-status${kind ? " " + kind : ""}`;
+    };
+    // 异步操作期间禁用按钮并显示占位文案, 结束后恢复
+    const withBusy = async (btn, label, fn) => {
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = label;
+      try { return await fn(); }
+      finally { btn.disabled = false; btn.textContent = old; }
+    };
+
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+
+    if (!linked) {
+      const nameIn = el.querySelector("#cloud-name");
+      const tokenIn = el.querySelector("#cloud-token");
+      el.querySelector("#btn-enable").addEventListener("click", (e) => {
+        withBusy(e.currentTarget, "开启中…", async () => {
+          setStatus("正在开启云同步…");
+          const r = await onEnable(nameIn.value);
+          // 成功时上层会重建界面; 仅在失败时提示
+          if (!r || !r.ok) setStatus((r && r.error) || "开启失败, 请稍后重试", "err");
+        });
+      });
+      el.querySelector("#btn-link").addEventListener("click", (e) => {
+        const token = (tokenIn.value || "").trim();
+        if (!token) { setStatus("请先粘贴恢复码", "err"); return; }
+        withBusy(e.currentTarget, "找回中…", async () => {
+          setStatus("正在验证恢复码…");
+          const r = await onLink(token);
+          if (!r || !r.ok) setStatus((r && r.error) || "找回失败", "err");
+        });
+      });
+    } else {
+      const tokenEl = el.querySelector("#cloud-token-val");
+      const revealBtn = el.querySelector("#btn-reveal");
+      let revealed = false;
+      revealBtn.addEventListener("click", () => {
+        revealed = !revealed;
+        tokenEl.textContent = revealed ? (state.token || "") : "••••••••••••••••";
+        tokenEl.classList.toggle("shown", revealed);
+        revealBtn.textContent = revealed ? "隐藏" : "显示";
+      });
+      el.querySelector("#btn-copy").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(state.token || "");
+          setStatus("✓ 恢复码已复制到剪贴板", "ok");
+        } catch (_e) {
+          // 剪贴板不可用(非 https/权限): 退化为显示明文让用户手动复制
+          revealed = true;
+          tokenEl.textContent = state.token || "";
+          tokenEl.classList.add("shown");
+          revealBtn.textContent = "隐藏";
+          setStatus("无法自动复制, 已显示恢复码请手动复制", "err");
+        }
+      });
+      el.querySelector("#btn-upload").addEventListener("click", (e) => {
+        withBusy(e.currentTarget, "上传中…", async () => {
+          setStatus("正在上传本地存档…");
+          const r = await onUpload();
+          setStatus(r && r.ok ? "✓ 本地存档已上传到云" : ((r && r.error) || "上传失败"), r && r.ok ? "ok" : "err");
+        });
+      });
+      el.querySelector("#btn-download").addEventListener("click", (e) => {
+        if (!window.confirm("下载云存档会覆盖当前本地进度, 确定继续?")) return;
+        withBusy(e.currentTarget, "下载中…", async () => {
+          setStatus("正在下载云存档…");
+          const r = await onDownload();
+          setStatus(r && r.ok ? "✓ 已用云存档覆盖本地" : ((r && r.error) || "下载失败"), r && r.ok ? "ok" : "err");
+        });
+      });
+      el.querySelector("#btn-unlink").addEventListener("click", () => {
+        if (!window.confirm("解绑只会清除本设备保存的恢复码, 不会删除云端数据。确定解绑?")) return;
+        onUnlink();
+      });
+    }
+  }
+
+  // ---------------- 排行榜 ----------------
+
+  /**
+   * 排行榜界面: 先渲染骨架与「加载中」, loadFn 异步返回后填充列表。
+   * loadFn: () => Promise<{ ok, list:[{name,best_time,best_kills,best_boss,best_level}] }>
+   * 昵称经 esc() 转义防 XSS。
+   */
+  showLeaderboard(loadFn, { onBack }) {
+    this.clear();
+    const el = this._make(`
+      <div class="sub">GLOBAL RANKING · 全服排行</div>
+      <h2 class="neon-title">🏆 排行榜</h2>
+      <div class="rank-sub">按存活时间排名 · 前 100 名</div>
+      <div class="rank-list" id="rank-list"><div class="rank-loading">加载中…</div></div>
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+      <div class="hint">完成一局并开启云同步后, 你的最佳成绩会自动上榜</div>
+    `, "rank-screen");
+    this.root.appendChild(el);
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+
+    const listEl = el.querySelector("#rank-list");
+    loadFn().then((res) => {
+      if (!res || !res.ok) {
+        listEl.innerHTML = `<div class="rank-empty">排行榜加载失败, 请稍后重试</div>`;
+        return;
+      }
+      const list = Array.isArray(res.list) ? res.list : [];
+      if (!list.length) {
+        listEl.innerHTML = `<div class="rank-empty">还没有记录, 快来抢占榜首!</div>`;
+        return;
+      }
+      listEl.innerHTML = "";
+      list.forEach((row, i) => {
+        const pos = i + 1;
+        const medal = pos === 1 ? "🥇" : pos === 2 ? "🥈" : pos === 3 ? "🥉" : String(pos);
+        const div = document.createElement("div");
+        div.className = `rank-row${pos <= 3 ? " top rank-" + pos : ""}`;
+        div.innerHTML = `
+          <span class="rank-pos">${medal}</span>
+          <span class="rank-name">${esc(row.name || "匿名")}</span>
+          <span class="rank-stat rank-time">${formatTime(Number(row.best_time) || 0)}</span>
+          <span class="rank-stat">☠ ${Number(row.best_kills) || 0}</span>
+          <span class="rank-stat">Lv.${Number(row.best_level) || 1}</span>
+        `;
+        listEl.appendChild(div);
+      });
+    });
   }
 }
 

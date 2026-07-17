@@ -107,6 +107,34 @@ html, body {
 }
 .pause-fab:active { background: rgba(0, 240, 255, 0.2); }
 
+/* ---------- 移动端屏上主动技能按钮 ---------- */
+.skill-fab {
+  position: absolute;
+  right: 18px;
+  bottom: 96px;
+  z-index: 20;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  display: none;                 /* 由 JS 控制显隐, 仅装备主动皮肤时出现 */
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  color: #7df9ff;
+  background: rgba(10, 14, 30, 0.78);
+  border: 1.5px solid rgba(125, 249, 255, 0.55);
+  box-shadow: 0 0 14px rgba(125, 249, 255, 0.5);
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  font-family: var(--mono);
+}
+.skill-fab .sf-ic { font-size: 22px; line-height: 1; font-weight: 700; }
+.skill-fab .sf-cd { font-size: 10px; letter-spacing: 0.06em; }
+.skill-fab.cooldown { color: #3a4356; border-color: #3a4356; box-shadow: none; }
+.skill-fab:active { background: rgba(125, 249, 255, 0.2); }
+
 /* ---------- 通用霓虹文字 ---------- */
 .neon-title {
   font-weight: 800;
@@ -139,9 +167,13 @@ html, body {
   animation: fadeIn 0.35s ease;
   touch-action: manipulation;    /* 界面层禁用双击缩放，保留点击与滚动 */
 }
-/* 机库屏幕关闭 backdrop-filter: 装备切换时任何子节点变化都会让浏览器重算整块背板模糊,
-   在深色主题下视觉上表现为"整屏闪一下". 机库背景本身已是深色渐变, 关掉模糊不影响观感. */
-.screen.hangar-screen { backdrop-filter: none; }
+/* 图鉴屏幕关闭 backdrop-filter: 装备切换时任何子节点变化都会让浏览器重算整块背板模糊,
+   在深色主题下视觉上表现为"整屏闪一下". 机库/强化实验室背景本身已是深色渐变, 关掉模糊不影响观感. */
+.screen.hangar-screen,
+.screen.shop-screen,
+.screen.codex-screen,
+.screen.cloud-screen,
+.screen.rank-screen { backdrop-filter: none; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -286,8 +318,8 @@ html, body {
 }
 /* 单个货币单元：数值 + 标签基线对齐 */
 .cores-balance .cur { display: inline-flex; align-items: baseline; gap: 6px; }
-/* 暗物质核心：品红高亮 */
-.cores-balance .cur-core { color: var(--neon-magenta); text-shadow: 0 0 12px var(--neon-magenta); }
+/* 暗物质核心：紫色高亮, 与强化实验室按钮 (btn-3) 保持视觉一致, 呼应"花核心买强化"的语义 */
+.cores-balance .cur-core { color: var(--neon-violet); text-shadow: 0 0 12px var(--neon-violet); }
 /* 两种货币之间的分隔符 */
 .cores-balance .cur-sep { color: #52627e; font-weight: 400; font-size: 18px; }
 /* 货币文字标签：小号、低饱和，不与数值抢视觉 */
@@ -312,12 +344,21 @@ html, body {
 .best-row b { color: var(--neon-cyan); }
 
 .menu-btns { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+/* 主行动按钮: 品红, 用于「开始游戏」/「继续上局」 */
+.btn.btn-primary { color: var(--neon-magenta); border-color: rgba(255, 43, 214, 0.45); background: rgba(255, 43, 214, 0.06); }
+.btn.btn-primary:hover { color: #fff; background: rgba(255, 43, 214, 0.18); box-shadow: 0 0 22px rgba(255, 43, 214, 0.6); }
+/* 次要开始按钮: 青, 用于「重新开始」(存在续玩快照时视觉降级, 与"继续上局"拉开层级) */
+.btn.btn-restart { color: var(--neon-cyan); border-color: rgba(0, 240, 255, 0.4); background: rgba(0, 240, 255, 0.06); }
+.btn.btn-restart:hover { color: #fff; background: rgba(0, 240, 255, 0.18); box-shadow: 0 0 22px rgba(0, 240, 255, 0.55); }
 .btn.btn-2 { color: var(--neon-magenta); border-color: rgba(255, 43, 214, 0.4); background: rgba(255, 43, 214, 0.06); }
 .btn.btn-2:hover { color: #fff; background: rgba(255, 43, 214, 0.16); box-shadow: 0 0 22px rgba(255, 43, 214, 0.55); }
 .btn.btn-3 { color: var(--neon-violet); border-color: rgba(138, 91, 255, 0.4); background: rgba(138, 91, 255, 0.06); }
 .btn.btn-3:hover { color: #fff; background: rgba(138, 91, 255, 0.16); box-shadow: 0 0 22px rgba(138, 91, 255, 0.55); }
 .btn.btn-4 { color: var(--neon-lime); border-color: rgba(170, 255, 0, 0.4); background: rgba(170, 255, 0, 0.06); }
 .btn.btn-4:hover { color: #fff; background: rgba(170, 255, 0, 0.16); box-shadow: 0 0 22px rgba(170, 255, 0, 0.55); }
+/* 图鉴按钮: 琥珀橙, 与"开始游戏"(青)/机库(柠檬绿)/强化实验室(紫) 明显区分 */
+.btn.btn-codex { color: #ff8a3d; border-color: rgba(255, 138, 61, 0.45); background: rgba(255, 138, 61, 0.06); }
+.btn.btn-codex:hover { color: #fff; background: rgba(255, 138, 61, 0.18); box-shadow: 0 0 22px rgba(255, 138, 61, 0.6); }
 /* 危险操作按钮（结束本局等）：暗红弱化，避免误当作主操作 */
 .btn.btn-quit { color: #ff6b7d; border-color: rgba(255, 107, 125, 0.4); background: rgba(255, 107, 125, 0.05); }
 .btn.btn-quit:hover { color: #fff; background: rgba(255, 107, 125, 0.16); box-shadow: 0 0 22px rgba(255, 107, 125, 0.5); }
@@ -341,6 +382,9 @@ html, body {
   background: rgba(255, 43, 214, 0.06);
 }
 .reward-box b { color: var(--neon-magenta); font-size: 19px; }
+/* 两种货币在结算收益里各自使用主题色, 避免撞色（提高优先级覆盖上面的默认 b 规则） */
+.reward-box b.cur-core { color: var(--neon-magenta); text-shadow: 0 0 12px var(--neon-magenta); }
+.reward-box b.shard-amt { color: var(--neon-lime); text-shadow: 0 0 12px var(--neon-lime); }
 
 /* ---------- 强化实验室商店 ---------- */
 .shop-list {
@@ -521,6 +565,70 @@ html, body {
 .gr-tag.new { color: var(--bg); background: var(--neon-lime); font-weight: 700; }
 .gr-tag.up { color: var(--neon-cyan); border: 1px solid rgba(0,240,255,0.5); }
 .gr-tag.refund { color: #8fa9c8; border: 1px solid rgba(143,169,200,0.4); }
+
+/* ---------- 图鉴 CODEX_STYLES_ANCHOR ---------- */
+.screen.codex-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 16px; }
+
+/* 统一图鉴内各段宽度, 使进度条 / 分区网格 / 里程碑左右对齐 */
+.codex-prog,
+.codex-body,
+.codex-milestones { width: min(720px, 94vw); }
+
+.codex-prog { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.cp-bar { width: 100%; height: 10px; background: rgba(10, 14, 30, 0.85); border: 1px solid rgba(125, 249, 255, 0.3); border-radius: 6px; overflow: hidden; }
+.cp-fill { height: 100%; background: linear-gradient(90deg, #7df9ff, #00f0ff 60%, #aaff00); box-shadow: 0 0 12px rgba(125, 249, 255, 0.65); transition: width 0.4s ease; }
+.cp-text { font-family: var(--mono); font-size: 13px; color: #b6c8e0; letter-spacing: 0.08em; }
+.cp-text b { color: #7df9ff; font-size: 16px; }
+
+.codex-body { display: flex; flex-direction: column; gap: 16px; }
+.codex-section { background: rgba(10, 14, 30, 0.5); border: 1px solid var(--panel-border); border-radius: 10px; padding: 12px 14px; }
+.cs-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.cs-title { font-family: var(--mono); font-size: 13px; color: #b6c8e0; letter-spacing: 0.12em; text-transform: uppercase; }
+.cs-count { font-family: var(--mono); font-size: 13px; color: var(--neon-cyan); }
+.cs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+
+/* 图鉴条目卡: 未发掘用黑色轮廓+问号, 已发掘用主题色符号+名称+描述 */
+.codex-cell { border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px; padding: 12px 10px; position: relative; min-height: 125px; text-align: center; }
+.codex-cell.locked { background: #05060e; border: 1.5px solid #1a2138; color: #1a2138; }
+.codex-cell.locked .cc-sym { font-size: 34px; font-weight: 700; color: #1a2138; text-shadow: none; line-height: 1; }
+.codex-cell.locked .cc-name { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: #2a3550; }
+.codex-cell.locked .cc-desc { font-family: var(--mono); font-size: 11px; color: #2a3550; line-height: 1.4; opacity: 0.8; white-space: pre-line; }
+.codex-cell.owned { background: rgba(10, 14, 30, 0.8); border: 1.5px solid var(--accent, var(--neon-cyan)); box-shadow: 0 0 14px color-mix(in srgb, var(--accent, #00f0ff) 40%, transparent); }
+.codex-cell.owned .cc-sym { font-size: 34px; font-weight: 700; color: var(--accent, var(--neon-cyan)); text-shadow: 0 0 12px var(--accent, var(--neon-cyan)); line-height: 1; }
+.codex-cell.owned .cc-name { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: #fff; line-height: 1.2; font-weight: 700; }
+.codex-cell.owned .cc-desc { font-family: var(--mono); font-size: 11px; color: #9fb4d2; line-height: 1.45; margin-top: 2px; white-space: pre-line; }
+
+/* 里程碑奖励行 */
+.codex-milestones { display: flex; flex-direction: column; gap: 10px; }
+/* 图鉴 → 成就区的分隔标题, 明确告知下方是收集里程碑奖励 */
+.codex-achv-title { width: min(720px, 94vw); display: flex; align-items: baseline; gap: 12px; margin-top: 6px; padding-bottom: 6px; border-bottom: 1px solid rgba(255, 138, 61, 0.35); }
+.codex-achv-title .cat-tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.24em; color: #ff8a3d; text-shadow: 0 0 10px rgba(255, 138, 61, 0.55); }
+.codex-achv-title .cat-cn { font-family: var(--mono); font-size: 14px; letter-spacing: 0.1em; color: #fff; }
+.cm-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; background: rgba(10, 14, 30, 0.6); border: 1px solid var(--panel-border); border-radius: 10px; text-align: left; }
+.cm-row.ready { border-color: var(--neon-lime); box-shadow: 0 0 18px rgba(170, 255, 0, 0.32); }
+.cm-row.claimed { opacity: 0.6; }
+.cm-info { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.cm-title { font-size: 15px; font-weight: 700; color: #fff; letter-spacing: 0.06em; }
+.cm-need { font-family: var(--mono); font-size: 11px; color: #7df9ff; margin-left: 8px; letter-spacing: 0.08em; }
+.cm-desc { font-family: var(--mono); font-size: 11px; color: #9fb4d2; line-height: 1.4; }
+.cm-reward { font-family: var(--mono); font-size: 12px; color: var(--neon-lime); letter-spacing: 0.06em; }
+.cm-action { min-width: 92px; text-align: right; }
+.cm-claim { pointer-events: auto; font-family: var(--mono); font-size: 13px; color: var(--bg); background: var(--neon-lime); border: 1px solid var(--neon-lime); border-radius: 6px; padding: 8px 20px; cursor: pointer; font-weight: 700; letter-spacing: 0.08em; box-shadow: 0 0 14px rgba(170, 255, 0, 0.5); }
+.cm-claim:hover { background: #fff; color: var(--bg); box-shadow: 0 0 22px rgba(170, 255, 0, 0.8); }
+.cm-claimed { font-family: var(--mono); font-size: 12px; color: #8fa9c8; letter-spacing: 0.1em; }
+.cm-pending { font-family: var(--mono); font-size: 12px; color: #7df9ff; letter-spacing: 0.08em; }
+
+/* 移动端: 条目更紧凑, 里程碑行改为竖排 */
+@media (max-width: 760px), (max-height: 560px) {
+  .cs-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .codex-cell { min-height: 132px; padding: 10px 8px; }
+  .codex-cell.owned .cc-sym, .codex-cell.locked .cc-sym { font-size: 28px; }
+  .codex-cell.owned .cc-desc, .codex-cell.locked .cc-desc { font-size: 11px; }
+  .cm-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .cm-action { text-align: center; }
+  .cm-claim { width: 100%; }
+}
+
 
 /* ---------- 首页顶部用户信息条 ---------- */
 .user-bar {
@@ -714,6 +822,99 @@ html, body {
   /* 移动端关闭扫描线（mix-blend-mode 在部分手机浏览器会渲染成灰色蒙层压住 HUD） */
   .fx-scanlines { display: none; }
 }
+
+/* ---------- 菜单：云同步 / 排行榜入口按钮配色 ---------- */
+.btn.btn-sync { color: var(--neon-cyan); border-color: rgba(0, 240, 255, 0.4); background: rgba(0, 240, 255, 0.06); }
+.btn.btn-sync:hover { color: #fff; background: rgba(0, 240, 255, 0.16); box-shadow: 0 0 22px rgba(0, 240, 255, 0.55); }
+.btn.btn-rank { color: #ffd23f; border-color: rgba(255, 210, 63, 0.45); background: rgba(255, 210, 63, 0.06); }
+.btn.btn-rank:hover { color: #fff; background: rgba(255, 210, 63, 0.18); box-shadow: 0 0 22px rgba(255, 210, 63, 0.6); }
+
+/* ---------- 云同步界面 ---------- */
+.screen.cloud-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 14px; }
+.cloud-body { display: flex; flex-direction: column; gap: 14px; width: min(92vw, 460px); }
+.cloud-card {
+  background: rgba(10, 14, 30, 0.6);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cc-title { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 0.06em; }
+.cc-desc { font-size: 13px; color: #9fb4d2; line-height: 1.6; }
+.cloud-form { display: flex; flex-direction: column; gap: 6px; }
+.cloud-form label { font-family: var(--mono); font-size: 12px; color: #8fa9c8; letter-spacing: 0.1em; }
+.cloud-form input {
+  pointer-events: auto;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  outline: none;
+}
+.cloud-form input:focus { border-color: var(--neon-cyan); box-shadow: 0 0 12px rgba(0, 240, 255, 0.3); }
+.cc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cc-k { font-family: var(--mono); font-size: 12px; color: #8fa9c8; min-width: 52px; }
+.cc-v { color: #fff; font-weight: 700; }
+.cloud-token { font-family: var(--mono); font-weight: 400; letter-spacing: 0.04em; color: var(--neon-cyan); word-break: break-all; flex: 1; min-width: 140px; }
+.cloud-token.shown { color: var(--neon-lime); }
+.cc-mini {
+  pointer-events: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--neon-cyan);
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.cc-mini:hover { color: #fff; background: rgba(0, 240, 255, 0.18); }
+.cloud-sep { font-family: var(--mono); font-size: 12px; color: #6f86a8; letter-spacing: 0.1em; }
+.cloud-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; width: min(92vw, 460px); }
+.cloud-notice {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--neon-lime);
+  background: rgba(170, 255, 0, 0.08);
+  border: 1px solid rgba(170, 255, 0, 0.35);
+  border-radius: 8px;
+  padding: 10px 14px;
+  line-height: 1.6;
+  max-width: min(92vw, 460px);
+}
+.cloud-status { font-family: var(--mono); font-size: 13px; letter-spacing: 0.06em; min-height: 18px; color: #9fb4d2; }
+.cloud-status.ok { color: var(--neon-lime); }
+.cloud-status.err { color: #ff6b7d; }
+
+/* ---------- 排行榜界面 ---------- */
+.screen.rank-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 12px; }
+.rank-sub { font-family: var(--mono); font-size: 12px; color: #8fa9c8; letter-spacing: 0.12em; }
+.rank-list { display: flex; flex-direction: column; gap: 8px; width: min(94vw, 520px); }
+.rank-loading, .rank-empty { font-family: var(--mono); font-size: 14px; color: #6f86a8; padding: 24px; text-align: center; }
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  background: rgba(10, 14, 30, 0.6);
+  border: 1px solid rgba(0, 240, 255, 0.18);
+  border-radius: 8px;
+  padding: 10px 14px;
+  text-align: left;
+}
+.rank-pos { font-family: var(--mono); font-size: 16px; font-weight: 700; color: #8fa9c8; min-width: 32px; text-align: center; }
+.rank-name { flex: 1; min-width: 90px; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-stat { font-family: var(--mono); font-size: 13px; color: #9fb4d2; }
+.rank-time { color: var(--neon-cyan); font-weight: 700; }
+.rank-row.top { border-color: rgba(255, 210, 63, 0.4); }
+.rank-row.top .rank-pos { color: #ffd23f; font-size: 18px; }
+.rank-row.rank-1 { border-color: rgba(255, 210, 63, 0.6); box-shadow: 0 0 16px rgba(255, 210, 63, 0.25); }
 
 </style>
 </head>

@@ -21,6 +21,7 @@ import { Pool } from "./Pool.js";
 import { SpatialGrid } from "./SpatialGrid.js";
 import { SaveData } from "./SaveData.js";
 import { Account } from "./Account.js";
+import { CloudSync } from "./CloudSync.js";
 
 import { Player } from "../entities/Player.js";
 import { Enemy } from "../entities/Enemy.js";
@@ -323,6 +324,8 @@ export class Game {
       onHangar: () => this._openHangar(),
       onCodex: () => this._openCodex(),
       onAccount: () => this._openAccount(),
+      onCloud: () => this._openCloud(),
+      onLeaderboard: () => this._openLeaderboard(),
     });
   }
 
@@ -341,6 +344,75 @@ export class Game {
         }
         return res;
       },
+      onBack: () => this._showMenu(),
+    });
+  }
+
+  // ---------------- 云同步 / 排行榜 ----------------
+
+  /**
+   * 打开云同步界面。opts.notice 用于操作成功后重进时的醒目提示。
+   * 所有网络调用委托给 CloudSync(失败不抛异常, 自动降级), 会改变绑定状态的
+   * 操作(开启/找回/解绑)在成功后重新打开本界面刷新视图。
+   */
+  _openCloud(opts = {}) {
+    this.audio.init();
+    this.state = GameState.CLOUD;
+    this._showPauseBtn(false);
+    const cred = CloudSync.cred();
+    const state = {
+      linked: !!cred,
+      name: cred ? (cred.name || this.user.name) : this.user.name,
+      token: cred ? cred.token : "",
+      notice: opts.notice || "",
+    };
+    this.screens.showCloud(state, {
+      onEnable: async (name) => {
+        const r = await CloudSync.register(name || this.user.name);
+        if (r.ok) this._openCloud({ notice: "云同步已开启！请立即复制并保存下方恢复码, 丢失将无法找回。" });
+        return r;
+      },
+      onLink: async (token) => {
+        const r = await CloudSync.linkByToken(token);
+        if (r.ok) {
+          // 找回成功且云端有存档: 询问是否覆盖本地
+          if (r.save && window.confirm("找回成功! 云端存在存档, 是否下载并覆盖当前本地进度?")) {
+            this._applyCloudSave(r.save);
+          }
+          this._openCloud({ notice: `已连接到云账号${r.name ? "「" + r.name + "」" : ""}。` });
+        }
+        return r;
+      },
+      onUpload: async () => {
+        SaveData.save(this.user.id, this.save); // 确保上传的是最新本地存档
+        return await CloudSync.pushSave(this.save);
+      },
+      onDownload: async () => {
+        const r = await CloudSync.pullSave();
+        if (r.ok && r.save) { this._applyCloudSave(r.save); return { ok: true }; }
+        if (r.ok && !r.save) return { ok: false, error: "云端暂无存档" };
+        return { ok: false, error: r.error || "下载失败" };
+      },
+      onUnlink: () => {
+        CloudSync.unlink();
+        this._openCloud({ notice: "已解绑本设备(云端数据保留)。" });
+      },
+      onBack: () => this._showMenu(),
+    });
+  }
+
+  /** 用云端存档覆盖本地: 经 localStorage + SaveData.load 完整校验, 拒绝任何非法字段 */
+  _applyCloudSave(cloudSave) {
+    SaveData.save(this.user.id, cloudSave);
+    this.save = SaveData.load(this.user.id);
+  }
+
+  /** 打开排行榜(公开, 无需绑定云端) */
+  _openLeaderboard() {
+    this.audio.init();
+    this.state = GameState.LEADERBOARD;
+    this._showPauseBtn(false);
+    this.screens.showLeaderboard(() => CloudSync.leaderboard(100), {
       onBack: () => this._showMenu(),
     });
   }
@@ -763,6 +835,17 @@ export class Game {
     this.save.totals.bossKills += this.stats.bossKills;
     this.save.totals.cores += reward;
     SaveData.save(this.user.id, this.save);
+
+    // 云同步: 已绑定则后台提交成绩 + 上传存档(fire-and-forget, 失败静默, 不阻塞结算演出)
+    if (CloudSync.isLinked()) {
+      CloudSync.submitScore({
+        time: Math.floor(this.stats.time),
+        kills: this.stats.kills,
+        bossKills: this.stats.bossKills,
+        level: this.stats.level,
+      });
+      CloudSync.pushSave(this.save);
+    }
 
     setTimeout(() => this.screens.showGameOver(this.stats, { reward, shardReward, records, save: this.save }, {
       onRestart: () => this.start(),

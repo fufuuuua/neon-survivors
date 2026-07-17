@@ -164,7 +164,9 @@ html, body {
    在深色主题下视觉上表现为"整屏闪一下". 机库/强化实验室背景本身已是深色渐变, 关掉模糊不影响观感. */
 .screen.hangar-screen,
 .screen.shop-screen,
-.screen.codex-screen { backdrop-filter: none; }
+.screen.codex-screen,
+.screen.cloud-screen,
+.screen.rank-screen { backdrop-filter: none; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -813,3 +815,96 @@ html, body {
   /* 移动端关闭扫描线（mix-blend-mode 在部分手机浏览器会渲染成灰色蒙层压住 HUD） */
   .fx-scanlines { display: none; }
 }
+
+/* ---------- 菜单：云同步 / 排行榜入口按钮配色 ---------- */
+.btn.btn-sync { color: var(--neon-cyan); border-color: rgba(0, 240, 255, 0.4); background: rgba(0, 240, 255, 0.06); }
+.btn.btn-sync:hover { color: #fff; background: rgba(0, 240, 255, 0.16); box-shadow: 0 0 22px rgba(0, 240, 255, 0.55); }
+.btn.btn-rank { color: #ffd23f; border-color: rgba(255, 210, 63, 0.45); background: rgba(255, 210, 63, 0.06); }
+.btn.btn-rank:hover { color: #fff; background: rgba(255, 210, 63, 0.18); box-shadow: 0 0 22px rgba(255, 210, 63, 0.6); }
+
+/* ---------- 云同步界面 ---------- */
+.screen.cloud-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 14px; }
+.cloud-body { display: flex; flex-direction: column; gap: 14px; width: min(92vw, 460px); }
+.cloud-card {
+  background: rgba(10, 14, 30, 0.6);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cc-title { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 0.06em; }
+.cc-desc { font-size: 13px; color: #9fb4d2; line-height: 1.6; }
+.cloud-form { display: flex; flex-direction: column; gap: 6px; }
+.cloud-form label { font-family: var(--mono); font-size: 12px; color: #8fa9c8; letter-spacing: 0.1em; }
+.cloud-form input {
+  pointer-events: auto;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  outline: none;
+}
+.cloud-form input:focus { border-color: var(--neon-cyan); box-shadow: 0 0 12px rgba(0, 240, 255, 0.3); }
+.cc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cc-k { font-family: var(--mono); font-size: 12px; color: #8fa9c8; min-width: 52px; }
+.cc-v { color: #fff; font-weight: 700; }
+.cloud-token { font-family: var(--mono); font-weight: 400; letter-spacing: 0.04em; color: var(--neon-cyan); word-break: break-all; flex: 1; min-width: 140px; }
+.cloud-token.shown { color: var(--neon-lime); }
+.cc-mini {
+  pointer-events: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--neon-cyan);
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.cc-mini:hover { color: #fff; background: rgba(0, 240, 255, 0.18); }
+.cloud-sep { font-family: var(--mono); font-size: 12px; color: #6f86a8; letter-spacing: 0.1em; }
+.cloud-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; width: min(92vw, 460px); }
+.cloud-notice {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--neon-lime);
+  background: rgba(170, 255, 0, 0.08);
+  border: 1px solid rgba(170, 255, 0, 0.35);
+  border-radius: 8px;
+  padding: 10px 14px;
+  line-height: 1.6;
+  max-width: min(92vw, 460px);
+}
+.cloud-status { font-family: var(--mono); font-size: 13px; letter-spacing: 0.06em; min-height: 18px; color: #9fb4d2; }
+.cloud-status.ok { color: var(--neon-lime); }
+.cloud-status.err { color: #ff6b7d; }
+
+/* ---------- 排行榜界面 ---------- */
+.screen.rank-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 12px; }
+.rank-sub { font-family: var(--mono); font-size: 12px; color: #8fa9c8; letter-spacing: 0.12em; }
+.rank-list { display: flex; flex-direction: column; gap: 8px; width: min(94vw, 520px); }
+.rank-loading, .rank-empty { font-family: var(--mono); font-size: 14px; color: #6f86a8; padding: 24px; text-align: center; }
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  background: rgba(10, 14, 30, 0.6);
+  border: 1px solid rgba(0, 240, 255, 0.18);
+  border-radius: 8px;
+  padding: 10px 14px;
+  text-align: left;
+}
+.rank-pos { font-family: var(--mono); font-size: 16px; font-weight: 700; color: #8fa9c8; min-width: 32px; text-align: center; }
+.rank-name { flex: 1; min-width: 90px; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-stat { font-family: var(--mono); font-size: 13px; color: #9fb4d2; }
+.rank-time { color: var(--neon-cyan); font-weight: 700; }
+.rank-row.top { border-color: rgba(255, 210, 63, 0.4); }
+.rank-row.top .rank-pos { color: #ffd23f; font-size: 18px; }
+.rank-row.rank-1 { border-color: rgba(255, 210, 63, 0.6); box-shadow: 0 0 16px rgba(255, 210, 63, 0.25); }

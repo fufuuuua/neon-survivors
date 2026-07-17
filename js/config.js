@@ -117,4 +117,6 @@ export const GameState = Object.freeze({
   LEVELUP: "LEVELUP",
   PAUSED: "PAUSED",
   GAMEOVER: "GAMEOVER",
+  CLOUD: "CLOUD",           // 云同步界面(注册/找回/上传下载存档)
+  LEADERBOARD: "LEADERBOARD", // 排行榜界面
 });

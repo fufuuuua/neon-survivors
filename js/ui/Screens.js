@@ -53,7 +53,7 @@ export class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, user, { onStart, onResume, onShop, onHangar, onCodex, onAccount }) {
+  showMenu(save, user, { onStart, onResume, onShop, onHangar, onCodex, onAccount, onCloud, onLeaderboard }) {
     this.clear();
     const b = save.best;
     const userBar = user
@@ -99,6 +99,10 @@ export class Screens {
         <button class="btn btn-4" id="btn-hangar">✦ 机库</button>
         <button class="btn btn-codex" id="btn-codex">▤ 图鉴</button>
       </div>
+      <div class="menu-btns menu-cloud">
+        <button class="btn btn-rank" id="btn-rank">🏆 排行榜</button>
+        <button class="btn btn-sync" id="btn-cloud">☁ 云同步</button>
+      </div>
       <div class="hint">${this.isTouch
         ? "拖动屏幕移动 · 点击右上角按钮暂停<br>武器自动开火"
         : "移动: W A S D / 方向键 &nbsp;·&nbsp; 暂停: P / ESC &nbsp;·&nbsp; 武器自动开火"}</div>
@@ -109,6 +113,8 @@ export class Screens {
     el.querySelector("#btn-hangar").addEventListener("click", onHangar);
     if (onCodex) el.querySelector("#btn-codex").addEventListener("click", onCodex);
     if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
+    if (onCloud) el.querySelector("#btn-cloud").addEventListener("click", onCloud);
+    if (onLeaderboard) el.querySelector("#btn-rank").addEventListener("click", onLeaderboard);
     if (onAccount) {
       const bar = el.querySelector("#user-bar");
       if (bar) bar.addEventListener("click", onAccount);
@@ -596,5 +602,198 @@ export class Screens {
 
     el.querySelector("#btn-back").addEventListener("click", onBack);
     this.root.appendChild(el);
+  }
+
+  // ---------------- 云同步 ----------------
+
+  /**
+   * 云同步界面: 未绑定时可「开启云同步(注册)」或「用恢复码找回」; 已绑定时可查看/复制恢复码、
+   * 上传本地存档到云、下载云存档覆盖本地、解绑本设备。
+   *
+   * 所有网络回调(onEnable/onLink/onUpload/onDownload)均返回 Promise<{ok, error?}>;
+   * 会改变绑定状态的操作(开启/找回/解绑)由上层(Game)在成功后重新打开本界面, 这里不自行重建。
+   * cloud-screen 已在 CSS 关闭 backdrop-filter, 局部文本更新不会触发整屏闪动。
+   */
+  showCloud(state, { onEnable, onLink, onUpload, onDownload, onUnlink, onBack }) {
+    this.clear();
+    const linked = !!state.linked;
+    const notice = state.notice
+      ? `<div class="cloud-notice">${esc(state.notice)}</div>`
+      : "";
+
+    const unlinkedHTML = `
+      <div class="cloud-card">
+        <div class="cc-title">开启云同步</div>
+        <div class="cc-desc">首次开启会生成一个「恢复码」, 凭它可在任意设备找回你的存档与排行榜成绩。</div>
+        <div class="cloud-form">
+          <label>昵称(排行榜显示)</label>
+          <input id="cloud-name" maxlength="16" placeholder="指挥官" autocomplete="off" value="${esc(state.name || "")}" />
+        </div>
+        <button class="btn btn-primary" id="btn-enable">☁ 开启云同步</button>
+      </div>
+      <div class="cloud-sep">— 已有恢复码？在下方找回 —</div>
+      <div class="cloud-card">
+        <div class="cloud-form">
+          <label>恢复码</label>
+          <input id="cloud-token" placeholder="粘贴你的恢复码" autocomplete="off" />
+        </div>
+        <button class="btn btn-2" id="btn-link">↩ 用恢复码找回</button>
+      </div>`;
+
+    const linkedHTML = `
+      <div class="cloud-card">
+        <div class="cc-row"><span class="cc-k">云账号</span><span class="cc-v">${esc(state.name || "指挥官")}</span></div>
+        <div class="cc-row">
+          <span class="cc-k">恢复码</span>
+          <span class="cc-v cloud-token" id="cloud-token-val">••••••••••••••••</span>
+          <button class="cc-mini" id="btn-reveal">显示</button>
+          <button class="cc-mini" id="btn-copy">复制</button>
+        </div>
+      </div>
+      <div class="cloud-actions">
+        <button class="btn btn-primary" id="btn-upload">⬆ 上传本地到云</button>
+        <button class="btn btn-2" id="btn-download">⬇ 下载云覆盖本地</button>
+      </div>
+      <button class="btn btn-quit" id="btn-unlink">解绑此设备</button>`;
+
+    const el = this._make(`
+      <div class="sub">CLOUD SYNC · 云端同步</div>
+      <h2 class="neon-title">☁ 云存档</h2>
+      ${notice}
+      <div class="cloud-body">${linked ? linkedHTML : unlinkedHTML}</div>
+      <div class="cloud-status" id="cloud-status"></div>
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+      <div class="hint">恢复码是找回云存档的唯一凭证, 丢失将无法找回, 请妥善保存</div>
+    `, "cloud-screen");
+    this.root.appendChild(el);
+
+    const statusEl = el.querySelector("#cloud-status");
+    const setStatus = (msg, kind = "") => {
+      statusEl.textContent = msg || "";
+      statusEl.className = `cloud-status${kind ? " " + kind : ""}`;
+    };
+    // 异步操作期间禁用按钮并显示占位文案, 结束后恢复
+    const withBusy = async (btn, label, fn) => {
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = label;
+      try { return await fn(); }
+      finally { btn.disabled = false; btn.textContent = old; }
+    };
+
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+
+    if (!linked) {
+      const nameIn = el.querySelector("#cloud-name");
+      const tokenIn = el.querySelector("#cloud-token");
+      el.querySelector("#btn-enable").addEventListener("click", (e) => {
+        withBusy(e.currentTarget, "开启中…", async () => {
+          setStatus("正在开启云同步…");
+          const r = await onEnable(nameIn.value);
+          // 成功时上层会重建界面; 仅在失败时提示
+          if (!r || !r.ok) setStatus((r && r.error) || "开启失败, 请稍后重试", "err");
+        });
+      });
+      el.querySelector("#btn-link").addEventListener("click", (e) => {
+        const token = (tokenIn.value || "").trim();
+        if (!token) { setStatus("请先粘贴恢复码", "err"); return; }
+        withBusy(e.currentTarget, "找回中…", async () => {
+          setStatus("正在验证恢复码…");
+          const r = await onLink(token);
+          if (!r || !r.ok) setStatus((r && r.error) || "找回失败", "err");
+        });
+      });
+    } else {
+      const tokenEl = el.querySelector("#cloud-token-val");
+      const revealBtn = el.querySelector("#btn-reveal");
+      let revealed = false;
+      revealBtn.addEventListener("click", () => {
+        revealed = !revealed;
+        tokenEl.textContent = revealed ? (state.token || "") : "••••••••••••••••";
+        tokenEl.classList.toggle("shown", revealed);
+        revealBtn.textContent = revealed ? "隐藏" : "显示";
+      });
+      el.querySelector("#btn-copy").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(state.token || "");
+          setStatus("✓ 恢复码已复制到剪贴板", "ok");
+        } catch (_e) {
+          // 剪贴板不可用(非 https/权限): 退化为显示明文让用户手动复制
+          revealed = true;
+          tokenEl.textContent = state.token || "";
+          tokenEl.classList.add("shown");
+          revealBtn.textContent = "隐藏";
+          setStatus("无法自动复制, 已显示恢复码请手动复制", "err");
+        }
+      });
+      el.querySelector("#btn-upload").addEventListener("click", (e) => {
+        withBusy(e.currentTarget, "上传中…", async () => {
+          setStatus("正在上传本地存档…");
+          const r = await onUpload();
+          setStatus(r && r.ok ? "✓ 本地存档已上传到云" : ((r && r.error) || "上传失败"), r && r.ok ? "ok" : "err");
+        });
+      });
+      el.querySelector("#btn-download").addEventListener("click", (e) => {
+        if (!window.confirm("下载云存档会覆盖当前本地进度, 确定继续?")) return;
+        withBusy(e.currentTarget, "下载中…", async () => {
+          setStatus("正在下载云存档…");
+          const r = await onDownload();
+          setStatus(r && r.ok ? "✓ 已用云存档覆盖本地" : ((r && r.error) || "下载失败"), r && r.ok ? "ok" : "err");
+        });
+      });
+      el.querySelector("#btn-unlink").addEventListener("click", () => {
+        if (!window.confirm("解绑只会清除本设备保存的恢复码, 不会删除云端数据。确定解绑?")) return;
+        onUnlink();
+      });
+    }
+  }
+
+  // ---------------- 排行榜 ----------------
+
+  /**
+   * 排行榜界面: 先渲染骨架与「加载中」, loadFn 异步返回后填充列表。
+   * loadFn: () => Promise<{ ok, list:[{name,best_time,best_kills,best_boss,best_level}] }>
+   * 昵称经 esc() 转义防 XSS。
+   */
+  showLeaderboard(loadFn, { onBack }) {
+    this.clear();
+    const el = this._make(`
+      <div class="sub">GLOBAL RANKING · 全服排行</div>
+      <h2 class="neon-title">🏆 排行榜</h2>
+      <div class="rank-sub">按存活时间排名 · 前 100 名</div>
+      <div class="rank-list" id="rank-list"><div class="rank-loading">加载中…</div></div>
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+      <div class="hint">完成一局并开启云同步后, 你的最佳成绩会自动上榜</div>
+    `, "rank-screen");
+    this.root.appendChild(el);
+    el.querySelector("#btn-back").addEventListener("click", onBack);
+
+    const listEl = el.querySelector("#rank-list");
+    loadFn().then((res) => {
+      if (!res || !res.ok) {
+        listEl.innerHTML = `<div class="rank-empty">排行榜加载失败, 请稍后重试</div>`;
+        return;
+      }
+      const list = Array.isArray(res.list) ? res.list : [];
+      if (!list.length) {
+        listEl.innerHTML = `<div class="rank-empty">还没有记录, 快来抢占榜首!</div>`;
+        return;
+      }
+      listEl.innerHTML = "";
+      list.forEach((row, i) => {
+        const pos = i + 1;
+        const medal = pos === 1 ? "🥇" : pos === 2 ? "🥈" : pos === 3 ? "🥉" : String(pos);
+        const div = document.createElement("div");
+        div.className = `rank-row${pos <= 3 ? " top rank-" + pos : ""}`;
+        div.innerHTML = `
+          <span class="rank-pos">${medal}</span>
+          <span class="rank-name">${esc(row.name || "匿名")}</span>
+          <span class="rank-stat rank-time">${formatTime(Number(row.best_time) || 0)}</span>
+          <span class="rank-stat">☠ ${Number(row.best_kills) || 0}</span>
+          <span class="rank-stat">Lv.${Number(row.best_level) || 1}</span>
+        `;
+        listEl.appendChild(div);
+      });
+    });
   }
 }
