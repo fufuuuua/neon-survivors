@@ -5115,7 +5115,7 @@ class Screens {
     const el = this._make(`
       <div class="sub">PILOT REGISTRY · 玩家档案</div>
       <h2 class="neon-title">选择玩家</h2>
-      <div class="hint">同一浏览器可保存多份进度; ID 由系统自动分配, 也是未来云端存档 / 排行榜的账号标识</div>
+      <div class="hint">同一浏览器可保存多份进度; ID 由系统自动分配, 也是云端存档 / 排行榜的账号标识</div>
 
       <div class="user-list"></div>
 
@@ -5207,6 +5207,7 @@ class Screens {
       ? `<div class="cloud-notice">${esc(state.notice)}</div>`
       : "";
 
+    // 按钮统一作为 .cloud-body 的直接子级(而非嵌在卡片内), 借 flex stretch 让所有按钮等宽对齐。
     const unlinkedHTML = `
       <div class="cloud-card">
         <div class="cc-title">开启云同步</div>
@@ -5215,16 +5216,16 @@ class Screens {
           <label>昵称(排行榜显示)</label>
           <input id="cloud-name" maxlength="16" placeholder="指挥官" autocomplete="off" value="${esc(state.name || "")}" />
         </div>
-        <button class="btn btn-primary" id="btn-enable">☁ 开启云同步</button>
       </div>
+      <button class="btn btn-primary" id="btn-enable">☁ 开启云同步</button>
       <div class="cloud-sep">— 已有恢复码？在下方找回 —</div>
       <div class="cloud-card">
         <div class="cloud-form">
           <label>恢复码</label>
           <input id="cloud-token" placeholder="粘贴你的恢复码" autocomplete="off" />
         </div>
-        <button class="btn btn-2" id="btn-link">↩ 用恢复码找回</button>
-      </div>`;
+      </div>
+      <button class="btn btn-2" id="btn-link">↩ 用恢复码找回</button>`;
 
     const linkedHTML = `
       <div class="cloud-card">
@@ -5236,10 +5237,8 @@ class Screens {
           <button class="cc-mini" id="btn-copy">复制</button>
         </div>
       </div>
-      <div class="cloud-actions">
-        <button class="btn btn-primary" id="btn-upload">⬆ 上传本地到云</button>
-        <button class="btn btn-2" id="btn-download">⬇ 下载云覆盖本地</button>
-      </div>
+      <button class="btn btn-primary" id="btn-upload">⬆ 上传本地到云</button>
+      <button class="btn btn-2" id="btn-download">⬇ 下载云覆盖本地</button>
       <button class="btn btn-quit" id="btn-unlink">解绑此设备</button>`;
 
     const el = this._make(`
