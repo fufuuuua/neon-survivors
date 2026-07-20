@@ -121,4 +121,5 @@ export const GameState = Object.freeze({
   LEADERBOARD: "LEADERBOARD", // 排行榜界面
   CAMPAIGN: "CAMPAIGN",       // 闯关模式选关界面(章节/关卡)
   CAMPAIGN_PLAY: "CAMPAIGN_PLAY", // 正在进行某一闯关关卡
+  FEEDBACK: "FEEDBACK",       // 玩家反馈留言板(与开发者对话)
 });

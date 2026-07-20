@@ -16,8 +16,28 @@ export const json = (data, status = 200, headers = {}) =>
     headers: { "content-type": "application/json; charset=utf-8", ...headers },
   });
 
-/** 错误响应 */
-export const bad = (msg, status = 400) => json({ ok: false, error: msg }, status);
+/** 错误响应. 记录到日志便于 `wrangler pages deployment tail` 实时查看失败原因. */
+export const bad = (msg, status = 400) => {
+  // 4xx 用 warn(客户端错误), 5xx 用 error(服务端异常), 200/其它当作 log(不会到这里但保底).
+  const line = `[api ${status}] ${msg}`;
+  if (status >= 500) console.error(line);
+  else if (status >= 400) console.warn(line);
+  else console.log(line);
+  return json({ ok: false, error: msg }, status);
+};
+
+/**
+ * 把 D1 / 未知异常包装成 500 响应, 同时把堆栈 console.error 出来.
+ * 用法: return await safeRun("pushSave", () => env.DB.prepare(...).run());
+ */
+export async function safeRun(scope, fn) {
+  try {
+    return await fn();
+  } catch (e) {
+    console.error(`[api ${scope} exception]`, e && e.stack || e);
+    return bad(`服务端异常(${scope})`, 500);
+  }
+}
 
 /** SHA-256 -> 十六进制字符串 */
 export async function sha256Hex(str) {

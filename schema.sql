@@ -19,3 +19,24 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- 排行榜按存活时间降序, 建索引加速 ORDER BY。
 CREATE INDEX IF NOT EXISTS idx_best_time ON users(best_time DESC);
+
+-- ------------------------------------------------------------------
+-- 反馈留言板: 玩家 <-> 开发者的双向异步对话。
+-- 设计:
+--  - 每条消息独立一行(不做 thread 抽象), 用 cloud_id 归属到某个云账号,
+--    通过 (cloud_id, created_at) 建索引按时间顺序拉取对话流.
+--  - role 区分消息作者: "user"=玩家(前端发送) / "dev"=开发者回复(由运维用 wrangler 直接 INSERT).
+--  - name 冗余存一次玩家昵称, 便于开发者直接读表就能看到"谁说的", 且历史消息不受昵称改动影响.
+--  - 未鉴权玩家(无云账号)也能留言: cloud_id 存本地 userId(带前缀 "local:") 便于区分.
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS feedback (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  cloud_id   TEXT NOT NULL,               -- 云账号 id, 或 "local:xxx"(未注册玩家的本地 id)
+  name       TEXT NOT NULL DEFAULT "",    -- 发送时的玩家昵称(仅展示用途)
+  role       TEXT NOT NULL,               -- "user" | "dev"
+  body       TEXT NOT NULL,               -- 消息正文(前端发送时已 trim/长度校验, 服务端二次限)
+  created_at INTEGER NOT NULL             -- 时间戳(ms)
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_thread ON feedback(cloud_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_feedback_time ON feedback(created_at DESC);

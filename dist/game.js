@@ -96,10 +96,10 @@ const CONFIG = Object.freeze({
   bossOrder: ["boss_nucleus", "boss_flux", "boss_void"],
 
   spawn: {
-    interval: 1.15,      // 初始生成间隔（秒）
-    minInterval: 0.28,
+    interval: 1.35,      // 初始生成间隔（秒, 略调高从 1.15, 前期喘息更充裕）
+    minInterval: 0.36,   // 生成间隔下限（从 0.28 上调, 后期难度峰值稍缓）
     batch: 2,            // 每次生成数量
-    rampEvery: 18,       // 每多少秒提升难度
+    rampEvery: 22,       // 每多少秒提升难度（从 18 上调, 难度爬升更缓）
     bossEvery: 120,      // 每多少秒出现 Boss
     spawnPad: 80,        // 屏幕外生成边距
   },
@@ -111,7 +111,7 @@ const CONFIG = Object.freeze({
 
   // 拾取道具参数
   items: {
-    bombRadius: 380,     // 湮灭：仅波及玩家周围此半径内的敌人（非全屏）
+    bombRadius: 260,     // 湮灭：波及玩家周围此半径内的敌人（缩小自 380, 避免几乎清屏）
     bombDamageBoss: 300, // 湮灭对范围内 Boss 的伤害
   },
 
@@ -135,6 +135,7 @@ const GameState = Object.freeze({
   LEADERBOARD: "LEADERBOARD", // 排行榜界面
   CAMPAIGN: "CAMPAIGN",       // 闯关模式选关界面(章节/关卡)
   CAMPAIGN_PLAY: "CAMPAIGN_PLAY", // 正在进行某一闯关关卡
+  FEEDBACK: "FEEDBACK",       // 玩家反馈留言板(与开发者对话)
 });
 
 Object.assign(exports, { CONFIG, GameState });
@@ -434,7 +435,14 @@ Object.assign(exports, { AudioFx });
 
 __defs["/Users/fiona/Desktop/neon-survivors/js/core/Camera.js"] = function (exports, require) {
 /**
- * Camera.js — 跟随玩家的摄像机，含屏幕震动与坐标换算。
+ * Camera.js — 跟随玩家的摄像机，含屏幕震动、缩放与坐标换算。
+ *
+ * 坐标系约定:
+ *  - viewW/viewH: CSS 像素的屏幕逻辑宽高 (对 UI/HUD 便于直接使用).
+ *  - zoom: world 层的整体缩放因子 (Game 在 render 时 ctx.scale(zoom)).
+ *          zoom < 1 => 可视世界更大 (角色/敌人显得更小); zoom > 1 => 拉近.
+ *  - 世界坐标可视区宽高 = viewW / zoom, viewH / zoom.
+ *    该值用于 camera 跟随、边界裁剪、inView 剔除、屏外生成范围.
  */
 const {clamp} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.js");
 const {CONFIG} = require("/Users/fiona/Desktop/neon-survivors/js/config.js");
@@ -445,6 +453,7 @@ class Camera {
     this.y = 0;
     this.viewW = viewW;
     this.viewH = viewH;
+    this.zoom = 1;
     this.shakeMag = 0;
     this._shakeX = 0;
     this._shakeY = 0;
@@ -452,19 +461,28 @@ class Camera {
 
   resize(w, h) { this.viewW = w; this.viewH = h; }
 
+  /** 设置世界缩放; 值越小可视范围越大 (默认 1) */
+  setZoom(z) { this.zoom = Math.max(0.1, z || 1); }
+
+  /** 世界坐标下的可视宽度 (= 屏幕像素 / zoom) */
+  get worldViewW() { return this.viewW / this.zoom; }
+  get worldViewH() { return this.viewH / this.zoom; }
+
   /** 触发屏幕震动 */
   shake(mag) { this.shakeMag = Math.max(this.shakeMag, mag); }
 
   update(target, dt) {
-    // 平滑跟随
-    const tx = target.x - this.viewW / 2;
-    const ty = target.y - this.viewH / 2;
+    // 平滑跟随: 让目标落在"世界可视区"的中心, 而非屏幕像素中心 (二者在缩放下不等)
+    const vw = this.worldViewW;
+    const vh = this.worldViewH;
+    const tx = target.x - vw / 2;
+    const ty = target.y - vh / 2;
     this.x += (tx - this.x) * Math.min(1, dt * 8);
     this.y += (ty - this.y) * Math.min(1, dt * 8);
 
-    // 限制在世界边界内
-    this.x = clamp(this.x, 0, CONFIG.world.width - this.viewW);
-    this.y = clamp(this.y, 0, CONFIG.world.height - this.viewH);
+    // 限制在世界边界内 (按世界可视区尺寸夹紧, 保证边缘不越过世界)
+    this.x = clamp(this.x, 0, CONFIG.world.width - vw);
+    this.y = clamp(this.y, 0, CONFIG.world.height - vh);
 
     // 震动衰减
     if (this.shakeMag > 0.1) {
@@ -476,20 +494,20 @@ class Camera {
     }
   }
 
-  /** 在渲染前应用变换 */
+  /** 在渲染前应用变换 (调用方需先 ctx.scale(zoom) 才让世界层缩放生效) */
   begin(ctx) {
     ctx.save();
     ctx.translate(-this.x + this._shakeX, -this.y + this._shakeY);
   }
   end(ctx) { ctx.restore(); }
 
-  /** 世界坐标 -> 屏幕坐标 */
-  toScreen(wx, wy) { return { x: wx - this.x, y: wy - this.y }; }
+  /** 世界坐标 -> 屏幕坐标 (含缩放, 便于屏幕空间 UI 使用) */
+  toScreen(wx, wy) { return { x: (wx - this.x) * this.zoom, y: (wy - this.y) * this.zoom }; }
 
-  /** 某点是否在可视范围内（含外扩边距，用于裁剪渲染） */
+  /** 某点是否在可视范围内 (含外扩边距, 用于裁剪渲染); 走世界可视区尺寸 */
   inView(x, y, pad = 60) {
-    return x > this.x - pad && x < this.x + this.viewW + pad &&
-           y > this.y - pad && y < this.y + this.viewH + pad;
+    return x > this.x - pad && x < this.x + this.worldViewW + pad &&
+           y > this.y - pad && y < this.y + this.worldViewH + pad;
   }
 }
 
@@ -629,6 +647,34 @@ const CloudSync = {
     return { ok: true, list: Array.isArray(r.data?.list) ? r.data.list : [] };
   },
 
+  /**
+   * 拉取反馈留言板的对话时间线.
+   * ownerId 由调用方决定: 云账号用 cred.cloudId; 匿名玩家用 "local:<localUserId>".
+   * 返回 { ok, messages }, messages: [{ role:"user"|"dev", name, body, created_at }].
+   */
+  async listFeedback(ownerId) {
+    const r = await req(`/feedback?ownerId=${encodeURIComponent(ownerId)}`, { method: "GET" });
+    if (!r.ok) return { ok: false, error: "留言加载失败", messages: [] };
+    return { ok: true, messages: Array.isArray(r.data?.messages) ? r.data.messages : [] };
+  },
+
+  /**
+   * 发送一条反馈. 云账号会自动附带 token 二次校验(防止冒名);
+   * 匿名 local:xxx 只依赖服务端限流保护.
+   */
+  async sendFeedback({ ownerId, name, body }) {
+    const c = loadCred();
+    const useToken = c && ownerId === c.cloudId ? c.token : null;
+    const r = await req("/feedback", { method: "POST", token: useToken, body: { ownerId, name, body } });
+    if (!r.ok) {
+      const errMsg = r.status === 429 ? "发送太频繁, 稍后再试"
+        : r.status === 401 ? "未授权"
+        : "发送失败";
+      return { ok: false, error: errMsg };
+    }
+    return { ok: true, message: r.data?.message || null };
+  },
+
   /** 解绑(仅清除本地凭证, 不删除云端数据) */
   unlink() { clearCred(); },
 };
@@ -718,6 +764,7 @@ class Game {
     this.flash = 0;          // 全屏白闪强度 0..1
     this.beams = [];         // 瞬时电弧光束（电弧链武器）
     this._runSaveTimer = 0;  // 对局快照自动保存节流计时
+    this._bombDropCd = 0;    // 湮灭道具最近一次掉落后的抑制冷却(秒), 归零前不再刷新湮灭
 
     // 元进度存档（跨局永久成长）
     // Account 负责账号库 + 迁移旧无后缀存档; 每位玩家有独立分区 save/run。
@@ -797,13 +844,28 @@ class Game {
 
   // ---------------- 生命周期 ----------------
   _setupCanvas() {
+    // CSS 显示尺寸: 用 canvas 元素自身的 clientWidth/Height 作为真源.
+    // 之前用 window.innerWidth/innerHeight 在移动端(浏览器动态 UI/地址栏)与 canvas 的实际 CSS 尺寸
+    // 不一致, 会导致内部像素 (DPR 缩放后) 与显示区长宽比不匹配, 表现为「网格拉成矩形/圆变椭圆」.
+    const rect = this.canvas.getBoundingClientRect();
+    const cssW = Math.max(1, Math.round(rect.width || this.canvas.clientWidth || window.innerWidth));
+    const cssH = Math.max(1, Math.round(rect.height || this.canvas.clientHeight || window.innerHeight));
+
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = window.innerWidth * dpr;
-    this.canvas.height = window.innerHeight * dpr;
+    this.canvas.width = cssW * dpr;
+    this.canvas.height = cssH * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.viewW = window.innerWidth;
-    this.viewH = window.innerHeight;
-    this.camera.resize(this.viewW, this.viewH);
+
+    // viewW/viewH: CSS 像素下的屏幕逻辑宽高, 供 HUD/暗角等屏幕空间 UI 使用.
+    this.viewW = cssW;
+    this.viewH = cssH;
+
+    // 世界缩放 (仅生存模式渲染时应用): 移动端整体缩小视图, 让可视范围更大, 角色/敌人更小.
+    // 桌面端保持 1:1. 首次进入时初始化, 后续可动态调整.
+    if (this.worldZoom == null) this.worldZoom = this.isTouch ? 0.7 : 1;
+
+    this.camera.resize(cssW, cssH);
+    // camera.zoom 在每帧 render 时根据 state 与 worldZoom 同步, 这里无需再设置.
   }
 
   _bindGlobalKeys() {
@@ -918,6 +980,8 @@ class Game {
     this.flash = 0;
     this.beams.length = 0;
     this._runSaveTimer = 0;
+    // 相机先按当前 worldZoom 对齐, 避免续玩瞬间相机基于 zoom=1 的可视区做初始化 (会让玩家不在正中央)
+    this.camera.setZoom(this.worldZoom || 1);
     this.camera.update(this.player, 1);
     this.screens.clear();
     this.state = GameState.PLAYING;
@@ -943,6 +1007,7 @@ class Game {
     this.timeScale = 1;
     this.flash = 0;
     this.beams.length = 0;
+    this.camera.setZoom(this.worldZoom || 1);
     this.camera.update(this.player, 1); // 立即对齐
     this.screens.clear();
     this.state = GameState.PLAYING;
@@ -970,7 +1035,28 @@ class Game {
       onAccount: () => this._openAccount(),
       onCloud: () => this._openCloud(),
       onLeaderboard: () => this._openLeaderboard(),
+      onFeedback: () => this._openFeedback(),
     });
+  }
+
+  /** 打开反馈留言板: 玩家与开发者的异步对话.
+   *  ownerId 优先取云账号 cloud_id(需鉴权保护); 未绑定则用 "local:<localUserId>" 作匿名 id. */
+  _openFeedback() {
+    this.audio.init();
+    this.state = GameState.FEEDBACK;
+    this._showPauseBtn(false);
+    const cred = CloudSync.cred();
+    const isLocal = !cred || !cred.cloudId;
+    const ownerId = !isLocal ? cred.cloudId : `local:${this.user.id}`;
+    const name = (cred && cred.name) || this.user.name || "指挥官";
+    this.screens.showFeedback(
+      { ownerId, name, isLocal },
+      {
+        loadFn: () => CloudSync.listFeedback(ownerId),
+        sendFn: (body) => CloudSync.sendFeedback({ ownerId, name, body }),
+        onBack: () => this._showMenu(),
+      },
+    );
   }
 
   /** 打开图鉴（收集情报 + 里程碑奖励） */
@@ -1281,7 +1367,8 @@ class Game {
 
   onBossSpawn(boss) {
     const name = (boss && boss.def && boss.def.name) || "母核";
-    this.particles.text(this.camera.x + this.viewW / 2, this.camera.y + 80, `⚠ ${name}降临`, (boss && boss.color) || "#ff2bd6", 30);
+    // 用 camera 的世界坐标可视宽度, 在 worldZoom 下也能保证文字在屏幕中央
+    this.particles.text(this.camera.x + this.camera.worldViewW / 2, this.camera.y + 80, `⚠ ${name}降临`, (boss && boss.color) || "#ff2bd6", 30);
     this.camera.shake(18);
   }
 
@@ -1353,14 +1440,15 @@ class Game {
     // 掉落经验
     this.spawnGem(enemy.x, enemy.y, enemy.xp, DropType.XP);
 
-    // 概率掉落道具
+    // 概率掉落道具. 湮灭最珍贵: 概率极低 + 冷却抑制(短期内已掉过则跳过, 玩家一场不至于连续爆屏).
     const roll = Math.random();
     if (roll < 0.015) {
       this.spawnGem(enemy.x, enemy.y, 0, DropType.HEAL);
     } else if (roll < 0.025) {
       this.spawnGem(enemy.x, enemy.y, 0, DropType.MAGNET);
-    } else if (roll < 0.03) {
+    } else if (roll < 0.027 && this._bombDropCd <= 0) {
       this.spawnGem(enemy.x, enemy.y, 0, DropType.BOMB);
+      this._bombDropCd = 25; // 掉落后 25 秒内不会再刷新湮灭
     }
   }
 
@@ -1395,7 +1483,11 @@ class Game {
       this.spawnGem(boss.x + Math.cos(a) * r, boss.y + Math.sin(a) * r, Math.ceil(boss.xp / n), DropType.XP);
     }
     this.spawnGem(boss.x - 30, boss.y, 0, DropType.HEAL);
-    this.spawnGem(boss.x + 30, boss.y, 0, DropType.BOMB);
+    // 湮灭仍受掉落冷却制约, 避免击杀两个连出现的 Boss 时连爆两颗湮灭
+    if (this._bombDropCd <= 0) {
+      this.spawnGem(boss.x + 30, boss.y, 0, DropType.BOMB);
+      this._bombDropCd = 25;
+    }
     this.spawnGem(boss.x, boss.y - 30, 0, DropType.MAGNET);
   }
 
@@ -1453,6 +1545,9 @@ class Game {
     // 周期性落盘对局快照（每 4 秒），保证意外关闭也能续玩
     this._runSaveTimer += dt;
     if (this._runSaveTimer >= 4) { this._runSaveTimer = 0; this._captureRun(); }
+
+    // 湮灭掉落冷却递减(真实时间): 短期内不再刷新, 避免连续爆屏
+    if (this._bombDropCd > 0) this._bombDropCd = Math.max(0, this._bombDropCd - dt);
 
     // 0) 生成敌人（含难度爬升与 Boss）
     this.spawnSystem.update(dt);
@@ -1566,10 +1661,19 @@ class Game {
 
     // 闯关模式由 LevelRunner 独立渲染整幅世界（专属地图/通道/终点/HUD），与生存模式互不干扰
     if (this.state === GameState.CAMPAIGN_PLAY) {
+      // 闯关模式恒 1:1 渲染, 复位 camera.zoom 避免残留生存模式的 worldZoom 影响跟随/剔除
+      if (this.camera.zoom !== 1) this.camera.setZoom(1);
       this.levelRunner.render(ctx);
       return;
     }
 
+    // 世界层缩放: 移动端 worldZoom<1, 让整片世界视觉上"缩小", 玩家看到的可视范围更大.
+    // camera 的 zoom 属性同步该值, inView/边界/跟随都按世界坐标可视区 (= 屏幕像素/zoom) 计算.
+    // scale 必须在 camera.begin(其内部 translate) 之前, 让 translate 参数在 scale 变换下正确映射.
+    const zoom = this.worldZoom || 1;
+    if (this.camera.zoom !== zoom) this.camera.setZoom(zoom);
+    ctx.save();
+    if (zoom !== 1) ctx.scale(zoom, zoom);
     this.camera.begin(ctx);
     this._drawBackground(ctx);
 
@@ -1589,6 +1693,7 @@ class Game {
     if (this.state !== GameState.MENU) this.player.render(ctx);
     this.particles.render(ctx);
     this.camera.end(ctx);
+    ctx.restore();
 
     // 暗角（屏幕空间，绘制在游戏世界之上、HUD 之下，因此不会压住血条/经验条）
     this._drawVignette(ctx);
@@ -1655,8 +1760,9 @@ class Game {
     const cam = this.camera;
     const startX = Math.floor(cam.x / g) * g;
     const startY = Math.floor(cam.y / g) * g;
-    const endX = cam.x + this.viewW;
-    const endY = cam.y + this.viewH;
+    // 用 camera 的世界坐标可视区宽/高, 与 worldZoom 下实际渲染范围一致, 保证网格覆盖满可见区域.
+    const endX = cam.x + cam.worldViewW;
+    const endY = cam.y + cam.worldViewH;
 
     ctx.save();
     ctx.strokeStyle = "rgba(0,240,255,0.07)";
@@ -1842,17 +1948,21 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/core/LevelRunner.js"] = function 
  *
  * 玩法(第一章):
  *  - 战机从世界下方出发, 沿一条带转折的霓虹通道向上突进, 抵达顶端终点即通关。
- *  - 生命值 3 点(心形 HUD): 触碰墙壁 -1, 被敌人撞击 -1, 归零即失败。
- *  - 走廊内会不断生成追击小怪, 玩家沿面朝方向自动射击, 需一边闪避一边清怪。
+ *  - 生命值 3 点(心形 HUD): 触碰墙壁 -1, 被敌人/敌方弹幕击中 -1, 归零即失败。
+ *  - 玩家武器与敌人类型完全复用无限模式(chaser/rusher/splitter/tank + blaster 主武器),
+ *    差别只在: 不生成 Boss、不掉经验/道具、无升级选择。
  *  - 通道沿途散布 3 颗能量星, 拾取数量决定本关星级(0..3)。
  *  - 有时间限制: 倒计时归零仍未抵达终点判定失败, 可重试。
  *
- * 与生存模式解耦: 复用 game.player 仅用于「造型渲染 + 引擎尾焰」, 移动/碰撞/射击/敌人 全部由本引擎驱动,
- * 不触发任何武器/升级/Boss 逻辑, 也不动 Game 的对象池。相机复用 game.camera(边界即世界边界)。
+ * 与生存模式的接线:
+ *   移动/墙壁扣血/星星/终点/HUD 由本引擎驱动;
+ *   敌人池/玩家武器/子弹/敌方弹幕/网格 直接复用 game 的对象池与 Player._updateWeapons.
+ *   接触/弹幕命中玩家时不走 Player.takeDamage(会扣 Player.hp), 改为触发本引擎的 3 心扣减.
+ *   击杀敌人默认会掉经验晶体, 本引擎每帧末清 gems 池以避免触发升级界面.
  */
 const {CONFIG} = require("/Users/fiona/Desktop/neon-survivors/js/config.js");
 const {Vector2} = require("/Users/fiona/Desktop/neon-survivors/js/utils/Vector2.js");
-const {TAU, clamp, rand} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.js");
+const {TAU, clamp, rand, weightedChoice} = require("/Users/fiona/Desktop/neon-survivors/js/utils/math.js");
 const {Skins} = require("/Users/fiona/Desktop/neon-survivors/js/systems/Skins.js");
 
 const SPEED = 300;         // 闯关固定移速(不受皮肤/局外强化影响, 保证关卡平衡)
@@ -1863,17 +1973,10 @@ const FINISH_PAD = 10;     // 抵达终点的纵向判定余量
 const HP_MAX = 3;
 const INVULN_TIME = 1.1;   // 受击后的无敌帧, 避免贴墙/贴怪连续掉血
 
-// 玩家射击(自动开火, 沿面朝方向)
-const SHOOT_INTERVAL = 0.32;
-const BULLET_SPEED = 640;
-const BULLET_LIFE = 1.1;
-const BULLET_R = 5;
-
-// 敌人生成 / 属性
-const ENEMY_SPAWN_INTERVAL = 1.7;
-const ENEMY_R = 14;
-const ENEMY_SPEED = 150;
-const ENEMY_HP = 2;        // 需 2 发子弹击落, 保证战术压力
+// 敌人生成节奏默认值(每关可通过 level.spawn 覆盖: 更小 interval / 更大 batch = 更激烈)
+const DEFAULT_SPAWN_INTERVAL = 1.5;
+const DEFAULT_SPAWN_BATCH = 2;
+const HP_SCALE = 1;           // 敌人血量倍率(闯关关卡内固定)
 
 class LevelRunner {
   constructor(game) {
@@ -1884,6 +1987,7 @@ class LevelRunner {
 
   /**
    * 开始一关。level 为 Campaign 的关卡定义(type: "path"), theme 为章节主题配色。
+   * 关卡可选携带 finale = { arena, bosses, interval, hpMul, spawn }: 抵达路径终点后触发的最终决战阶段.
    * onEnd({ result: "clear"|"fail"|"abort", stars }) 在关卡结束时回调。
    */
   start(level, theme, onEnd) {
@@ -1893,7 +1997,6 @@ class LevelRunner {
     this.active = true;
 
     const g = this.game;
-    // 复用玩家实体做移动与造型渲染, 但清空武器/数值(reset), 只套用选中皮肤外观
     g.player.reset();
     const sk = Skins.get(Skins.selected(g.save));
     if (sk) g.player.skin = { id: sk.id, shape: sk.shape, accent: sk.accent, star: Math.max(1, Skins.starOf(g.save, sk.id)) };
@@ -1904,6 +2007,8 @@ class LevelRunner {
     g.player.y = start.y;
     g.player.facing.set(0, -1);
     g.player.moveDir.set(0, 0);
+    g.player.hp = g.player.maxHp;
+    g.player.invuln = 0;
 
     this.stars = level.stars.map((s) => ({ x: s.x, y: s.y, got: false }));
     this.timeLeft = level.timeLimit;
@@ -1911,22 +2016,82 @@ class LevelRunner {
     this.done = false;
     this._flameT = 0;
 
-    // 生命值 / 敌人 / 子弹 —— 关卡自管理, 不走 Game 的池
+    // 3 心 / 无敌帧 / 生成计时
     this.hp = HP_MAX;
     this.invuln = 0;
-    this._wallHit = false;         // 上一帧是否处于"越界贴墙"状态, 用于边沿触发扣血(不连扣)
-    this.enemies = [];             // { x, y, hp, r, flash }
-    this.bullets = [];             // { x, y, vx, vy, life, r, color }
-    this._shootT = SHOOT_INTERVAL; // 首发略等
-    this._spawnT = 1.2;            // 首刷延迟, 给玩家上手时间
+    this._wallHit = false;
+    this._spawnT = 1.2;
 
-    // 清场: 关卡不使用生存模式的敌人/子弹/掉落, 但复用粒子系统做尾焰与拾取特效
+    // 通道关卡参数(段宽 + 敌种 + 生成节奏 + 数值倍率)
+    this._spawnInterval = (level.spawn && level.spawn.interval) || DEFAULT_SPAWN_INTERVAL;
+    this._spawnBatch = (level.spawn && level.spawn.batch) || DEFAULT_SPAWN_BATCH;
+    this._spawnTiers = (level.spawn && level.spawn.tiers) || level.enemyTiers || null;
+    this._segWidths = Array.isArray(level.widths) && level.widths.length === level.path.length - 1
+      ? level.widths.slice()
+      : null;
+    this._speedMul = level.speedMul || 1;
+    this._hpMul = level.hpMul || 1;
+
+    // 阶段: "corridor"(通道)  → 到达终点后, 若关卡有 finale, 切到 "finale"(竞技场 Boss 战)
+    this.phase = "corridor";
+    this.hasFinale = !!level.finale;
+    this.finale = null; // finale 状态在触发时初始化
+
+    // 清场
+    g._enemyPool.clear();
+    g._projPool.clear();
+    g._ebPool.clear();
+    g._gemPool.clear();
     g.particles.clear();
     g.beams.length = 0;
     g.bosses = [];
+    g.spawnSystem.reset();
     g.timeScale = 1;
     g.flash = 0;
-    g.camera.update(g.player, 1); // 立即对齐相机
+    g.camera.update(g.player, 1);
+  }
+
+  /** 通道通关时的处理: 若有 finale, 切入 Boss 决战阶段; 否则直接结算 */
+  _enterFinaleOrClear() {
+    const g = this.game;
+    const p = g.player;
+    const gotStars = this.stars.filter((s) => s.got).length;
+    if (!this.hasFinale) {
+      g.audio.bossKill && g.audio.bossKill();
+      g.screenFlash(0.7);
+      g.camera.shake(24);
+      g.particles.burst(p.x, p.y, this.theme.glow, 40, 320, 5, 1.0);
+      this._finish("clear", gotStars);
+      return;
+    }
+    // 进入 Boss 决战: 清空通道敌人/子弹, 保留玩家状态与已得星数.
+    const f = this.level.finale;
+    this.phase = "finale";
+    this.finale = {
+      arena: f.arena,
+      queue: (f.bosses || []).slice(),
+      interval: f.interval || 3.0,
+      hpMul: f.hpMul || 1,
+      spawnCfg: f.spawn || null,
+      spawnT: 1.5,
+      bossT: 1.2,
+      active: null,
+      killed: 0,
+      total: (f.bosses || []).length,
+      corridorStars: gotStars,      // 通道段拿到的星数, 决定 Boss 战失败时能保底的星数
+    };
+    // 玩家 dash 到竞技场中心, 通道结束的仪式感
+    g.particles.burst(p.x, p.y, this.theme.glow, 40, 320, 5, 1.0);
+    g.screenFlash(0.6);
+    g.camera.shake(20);
+    p.x = f.arena.x;
+    p.y = f.arena.y + f.arena.r * 0.55;
+    g.audio.bossAttack && g.audio.bossAttack();
+    // 清空场上残余
+    g._enemyPool.clear();
+    g._ebPool.clear();
+    g.bosses = [];
+    g.particles.text(f.arena.x, f.arena.y - 60, "母核降临", "#ff2bd6", 40);
   }
 
   /** 主动退出(返回选关) */
@@ -1939,13 +2104,21 @@ class LevelRunner {
     if (this.done) return;
     this.done = true;
     this.active = false;
+    // 关卡结束把 game 的池清干净, 避免残留敌人/子弹影响下一次进关或菜单
+    const g = this.game;
+    g._enemyPool.clear();
+    g._projPool.clear();
+    g._ebPool.clear();
+    g._gemPool.clear();
+    g.beams.length = 0;
+    g.bosses = [];
     const cb = this._onEnd;
     this._onEnd = null;
     if (cb) cb({ result, stars });
   }
 
   // ---------------- 几何: 通道中心线最近点 ----------------
-  /** 返回玩家点到折线(通道中心线)的最近点, 附带所在段索引 seg 与该段上的 t 参数(用于沿路径前推) */
+  /** 返回玩家点到折线(通道中心线)的最近点, 附带所在段索引 seg 与该段上的 t 参数 */
   _closestOnPath(px, py) {
     const path = this.level.path;
     let bx = path[0].x, by = path[0].y, bestD = Infinity, bestSeg = 0, bestT = 0;
@@ -1961,7 +2134,60 @@ class LevelRunner {
     return { x: bx, y: by, dist: Math.sqrt(bestD), seg: bestSeg, t: bestT };
   }
 
-  /** 玩家受伤统一入口: 处理无敌帧/演出/死亡判定 */
+  /** 段 i 的通道半宽: 有 widths 用段独立值, 否则退化为 level.radius */
+  _segRadius(i) {
+    return this._segWidths ? this._segWidths[i] : this.level.radius;
+  }
+
+  /**
+   * 变宽通道的**几何并集**判定: 通道 = 所有段矩形 ∪ 所有拐点圆盘.
+   * 玩家只要落在任意一段的矩形内, 或任意拐点的圆盘内, 即视为在通道内(与视觉一致).
+   * 越界时挑"最容易滑回"的形体(excess 最小)把玩家推回边界.
+   *
+   * 边界宽容度: allowD = segR - playerR * 0.5.
+   *   - 视觉墙内沿在 segR 处; 玩家 sprite 半径 = playerR.
+   *   - 用 segR - 0.5*playerR 意味着「玩家 sprite 外沿刚碰到视觉墙内沿」时判越界, 最符合直觉.
+   *   - (旧写法 segR - playerR 过于严格, 玩家离墙还有一整个 sprite 宽的空隙就被误判扣血)
+   */
+  _insideCorridor(px, py, playerR) {
+    const path = this.level.path;
+    const margin = playerR * 0.5;
+    let inside = false;
+    let bestExcess = Infinity;
+    let bestClose = { x: path[0].x, y: path[0].y };
+    let bestAllowD = this._segRadius(0) - margin;
+    // 1) 段矩形: 用点到线段最近点判定
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1];
+      const abx = b.x - a.x, aby = b.y - a.y;
+      const len2 = abx * abx + aby * aby || 1;
+      const t = clamp(((px - a.x) * abx + (py - a.y) * aby) / len2, 0, 1);
+      const cx = a.x + abx * t, cy = a.y + aby * t;
+      const d = Math.hypot(px - cx, py - cy);
+      const allowD = this._segRadius(i) - margin;
+      if (d <= allowD) inside = true;
+      const excess = d - allowD;
+      if (excess < bestExcess) {
+        bestExcess = excess; bestClose = { x: cx, y: cy }; bestAllowD = allowD;
+      }
+    }
+    // 2) 拐点圆盘: 半径取相邻两段较大宽, 与渲染时的 disc 半径一致
+    for (let i = 0; i < path.length; i++) {
+      const rPrev = i > 0 ? this._segRadius(i - 1) : this._segRadius(0);
+      const rNext = i < path.length - 1 ? this._segRadius(i) : this._segRadius(path.length - 2);
+      const cornerR = Math.max(rPrev, rNext);
+      const d = Math.hypot(px - path[i].x, py - path[i].y);
+      const allowD = cornerR - margin;
+      if (d <= allowD) inside = true;
+      const excess = d - allowD;
+      if (excess < bestExcess) {
+        bestExcess = excess; bestClose = { x: path[i].x, y: path[i].y }; bestAllowD = allowD;
+      }
+    }
+    return { inside, close: bestClose, allowD: bestAllowD };
+  }
+
+  /** 玩家受伤统一入口(3 心系统): 处理无敌帧/演出/死亡判定. 不走 Player.takeDamage */
   _hurtPlayer(reason) {
     if (this.invuln > 0 || this.done) return;
     this.hp -= 1;
@@ -1969,7 +2195,7 @@ class LevelRunner {
     const g = this.game;
     g.camera.shake(reason === "wall" ? 12 : 16);
     g.screenFlash(reason === "wall" ? 0.35 : 0.5);
-    g.audio.hit && g.audio.hit();
+    g.audio.hurt && g.audio.hurt();
     g.particles.burst(g.player.x, g.player.y, "#ff6b7d", 22, 260, 3, 0.6);
     g.particles.text(g.player.x, g.player.y - 32, "-1", "#ff6b7d", 22);
     if (this.hp <= 0) {
@@ -1980,26 +2206,109 @@ class LevelRunner {
   }
 
   /**
-   * 全屏生成敌人: 在当前相机可视范围的边缘随机挑一个点(通道内外都可以),
-   * 敌人无需受走廊约束, 可从墙外冲进来撞玩家, 强化"到处都是威胁"的压迫感.
+   * 敌人权重表.
+   *  - 有 level.enemyTiers / spawn.tiers 时, 严格用该列表(等权重), 保证每关"能出什么怪"稳定可控.
+   *  - 否则退回按 elapsed 递进解锁(与无限模式一致).
    */
-  _spawnEnemy() {
+  _enemyTypePool() {
+    if (this._spawnTiers && this._spawnTiers.length) {
+      return this._spawnTiers.map((v) => ({ value: v, weight: 1 }));
+    }
+    const t = this.elapsed;
+    const pool = [{ value: "chaser", weight: 10 }];
+    if (t > 8)  pool.push({ value: "rusher",   weight: 7 });
+    if (t > 20) pool.push({ value: "splitter", weight: 5 });
+    if (t > 32) pool.push({ value: "tank",     weight: 4 });
+    return pool;
+  }
+
+  /**
+   * 全屏边缘生成一波敌人. 关卡的 speedMul/hpMul 用于:
+   *  - hpMul: 通过 hpScale 参数传给 spawnEnemy(直接乘到 maxHp).
+   *  - speedMul: 敌人 spawn 之后, 手动缩放 e.speed(基础速度乘倍率), 保证追击型能追上玩家(300 px/s).
+   */
+  _spawnWave() {
     const g = this.game;
     const cam = g.camera;
     const W = g.viewW, H = g.viewH;
-    const margin = 40; // 出屏外一点点, 让敌人从画面外缓入, 视觉上更自然
-    // 四条边随机: 0=上 1=右 2=下 3=左
-    const edge = Math.floor(rand(0, 4));
-    let ex, ey;
-    if (edge === 0)      { ex = cam.x + rand(-margin, W + margin); ey = cam.y - margin; }
-    else if (edge === 1) { ex = cam.x + W + margin;                ey = cam.y + rand(-margin, H + margin); }
-    else if (edge === 2) { ex = cam.x + rand(-margin, W + margin); ey = cam.y + H + margin; }
-    else                 { ex = cam.x - margin;                    ey = cam.y + rand(-margin, H + margin); }
-    // 世界边界钳制, 避免刷到世界外反被相机丢掉
-    ex = clamp(ex, ENEMY_R, CONFIG.world.width - ENEMY_R);
-    ey = clamp(ey, ENEMY_R, CONFIG.world.height - ENEMY_R);
-    this.enemies.push({ x: ex, y: ey, hp: ENEMY_HP, r: ENEMY_R, flash: 0 });
-    g.particles.burst(ex, ey, "#ff6b7d", 10, 160, 2, 0.35);
+    const margin = 60;
+    const pool = this._enemyTypePool();
+    for (let i = 0; i < this._spawnBatch; i++) {
+      const type = weightedChoice(pool);
+      const edge = Math.floor(rand(0, 4));
+      let ex, ey;
+      if (edge === 0)      { ex = cam.x + rand(-margin, W + margin); ey = cam.y - margin; }
+      else if (edge === 1) { ex = cam.x + W + margin;                ey = cam.y + rand(-margin, H + margin); }
+      else if (edge === 2) { ex = cam.x + rand(-margin, W + margin); ey = cam.y + H + margin; }
+      else                 { ex = cam.x - margin;                    ey = cam.y + rand(-margin, H + margin); }
+      ex = clamp(ex, 24, CONFIG.world.width - 24);
+      ey = clamp(ey, 24, CONFIG.world.height - 24);
+      const e = g.spawnEnemy(type, ex, ey, this._hpMul);
+      if (e && this._speedMul !== 1) e.speed *= this._speedMul;
+    }
+  }
+
+  /**
+   * Boss 决战阶段(finale)推进:
+   *  - 玩家被约束在圆形竞技场 arena 内(墙壁不扣血, 只滑回);
+   *  - 同一时刻只有 1 个 Boss 存活, 前一个死后 interval 秒登场下一个;
+   *  - 骚扰性小怪可选(f.spawn), 与生存模式敌人共用池;
+   *  - 全部 Boss 击败 = 3 星通关; 时间耗尽 = fail 但保留通道段的星数(保底).
+   */
+  _updateFinale(dt) {
+    const g = this.game;
+    const f = this.finale;
+    // Boss 死亡检查(注意 Boss 死后会被 _killBoss 从 game.bosses 移除, e.active=false)
+    if (f.active && !f.active.active) {
+      f.active = null;
+      f.killed += 1;
+      f.bossT = f.interval;
+    }
+    // 全部击败 → 3 星通关
+    if (!f.active && f.queue.length === 0 && f.killed >= f.total) {
+      const p = g.player;
+      g.audio.bossKill && g.audio.bossKill();
+      g.screenFlash(0.9);
+      g.camera.shake(32);
+      g.particles.burst(p.x, p.y, this.theme.glow, 60, 500, 6, 1.4);
+      g.particles.text(p.x, p.y - 60, "净化完成", "#aaff00", 40);
+      this._finish("clear", 3);
+      return;
+    }
+    // 下一个 Boss 登场
+    if (!f.active && f.queue.length > 0) {
+      f.bossT -= dt;
+      if (f.bossT <= 0) {
+        const type = f.queue.shift();
+        const boss = g.spawnEnemy(type, f.arena.x, f.arena.y - f.arena.r * 0.55, f.hpMul);
+        if (boss) {
+          f.active = boss;
+          g.audio.bossAttack && g.audio.bossAttack();
+          g.camera.shake(24);
+          g.particles.burst(boss.x, boss.y, boss.color, 30, 260, 4, 0.9);
+          const bname = (boss.def && boss.def.name) || "母核";
+          g.particles.text(boss.x, boss.y - 40, `⚠ ${bname}`, boss.color, 30);
+        }
+      }
+    }
+    // 骚扰性小怪(可选): 用 finale 独立节奏, 不复用通道段的 _spawnT
+    if (f.spawnCfg) {
+      f.spawnT -= dt;
+      if (f.spawnT <= 0) {
+        f.spawnT += f.spawnCfg.interval || 3.0;
+        const batch = f.spawnCfg.batch || 1;
+        const tiers = f.spawnCfg.tiers || ["chaser"];
+        for (let i = 0; i < batch; i++) {
+          const type = tiers[Math.floor(rand(0, tiers.length))];
+          // 在竞技场边缘生成, 让玩家从各方向感受威胁
+          const ang = rand(0, TAU);
+          const ex = f.arena.x + Math.cos(ang) * (f.arena.r + 40);
+          const ey = f.arena.y + Math.sin(ang) * (f.arena.r + 40);
+          const e = g.spawnEnemy(type, ex, ey, this._hpMul);
+          if (e && this._speedMul !== 1) e.speed *= this._speedMul;
+        }
+      }
+    }
   }
 
   // ---------------- 更新 ----------------
@@ -2010,7 +2319,7 @@ class LevelRunner {
     this.elapsed += dt;
     if (this.invuln > 0) this.invuln = Math.max(0, this.invuln - dt);
 
-    // 移动(键盘/摇杆), 不触发任何武器逻辑
+    // ---- 1) 移动: 键盘/摇杆, 用闯关固定移速, 不走 Player.update ----
     const mv = g.input.getMoveVector();
     if (mv.lengthSq > 0) {
       p.x += mv.x * SPEED * dt;
@@ -2031,111 +2340,94 @@ class LevelRunner {
       p.moveDir.set(0, 0);
     }
     p.animT += dt;
-
-    // 世界边界兜底
     p.x = clamp(p.x, p.radius, CONFIG.world.width - p.radius);
     p.y = clamp(p.y, p.radius, CONFIG.world.height - p.radius);
 
-    // 通道约束: 距中心线超过 (radius - 机身半径) 则贴墙滑回;
-    // 边沿触发扣血——只有"从非贴墙 -> 贴墙"这一帧扣一次, 无敌帧结束再贴仍会再扣.
-    const near = this._closestOnPath(p.x, p.y);
-    const maxD = this.level.radius - p.radius;
-    if (near.dist > maxD) {
-      const nx = (p.x - near.x) / (near.dist || 1);
-      const ny = (p.y - near.y) / (near.dist || 1);
-      p.x = near.x + nx * maxD;
-      p.y = near.y + ny * maxD;
-      if (!this._wallHit) {
-        this._wallHit = true;
-        this._hurtPlayer("wall");
-      }
-      // 撞墙火花(常驻贴墙也保留少量, 强化边界感)
-      if (Math.floor(this.elapsed * 30) % 3 === 0) {
-        g.particles.spark(p.x, p.y, rand(-40, 40), rand(-40, 40), 0.25, this.theme.wall, 2.2);
+    // ---- 2) 空间约束:
+    //   corridor 阶段: 段矩形 ∪ 拐点圆盘, 越界扣血;
+    //   finale   阶段: 圆形竞技场, 越界只滑回, 不扣血(伤害只来自 Boss/小怪).
+    if (this.phase === "finale") {
+      const a = this.finale.arena;
+      const dx = p.x - a.x, dy = p.y - a.y;
+      const d = Math.hypot(dx, dy);
+      const rmax = a.r - p.radius;
+      if (d > rmax) {
+        const nx = dx / (d || 1), ny = dy / (d || 1);
+        p.x = a.x + nx * rmax;
+        p.y = a.y + ny * rmax;
       }
     } else {
-      this._wallHit = false;
-    }
-
-    // 自动射击: 沿 facing 每 SHOOT_INTERVAL 发射一颗
-    this._shootT -= dt;
-    if (this._shootT <= 0) {
-      this._shootT += SHOOT_INTERVAL;
-      const dir = (p.facing.lengthSq > 0) ? p.facing : { x: 0, y: -1 };
-      const c = p.skin.accent || this.theme.wall;
-      this.bullets.push({
-        x: p.x + dir.x * (p.radius + 4),
-        y: p.y + dir.y * (p.radius + 4),
-        vx: dir.x * BULLET_SPEED,
-        vy: dir.y * BULLET_SPEED,
-        life: BULLET_LIFE,
-        r: BULLET_R,
-        color: c,
-      });
-      g.audio.shoot && g.audio.shoot();
-    }
-
-    // 敌人生成
-    this._spawnT -= dt;
-    if (this._spawnT <= 0) {
-      this._spawnT += ENEMY_SPAWN_INTERVAL;
-      this._spawnEnemy();
-    }
-
-    // 子弹: 直线飞行 + 撞敌 + 出走廊消散
-    for (const b of this.bullets) {
-      if (b.life <= 0) continue;
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      b.life -= dt;
-      if (b.life <= 0) continue;
-      for (const e of this.enemies) {
-        if (e.hp <= 0) continue;
-        const dx = e.x - b.x, dy = e.y - b.y;
-        const rr = e.r + b.r;
-        if (dx * dx + dy * dy < rr * rr) {
-          e.hp -= 1;
-          e.flash = 0.09;
-          b.life = 0;
-          g.particles.burst(b.x, b.y, b.color, 6, 200, 2, 0.28);
-          if (e.hp <= 0) {
-            g.audio.hurt && g.audio.hurt();
-            g.particles.burst(e.x, e.y, "#ff6b7d", 20, 280, 3, 0.55);
-          } else {
-            g.audio.hit && g.audio.hit();
-          }
-          break;
+      const box = this._insideCorridor(p.x, p.y, p.radius);
+      if (!box.inside) {
+        const dx = p.x - box.close.x, dy = p.y - box.close.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        p.x = box.close.x + (dx / dist) * box.allowD;
+        p.y = box.close.y + (dy / dist) * box.allowD;
+        if (!this._wallHit) {
+          this._wallHit = true;
+          this._hurtPlayer("wall");
         }
-      }
-      if (b.life <= 0) continue;
-      // 敌人现在可能在通道外, 子弹不再受走廊约束; 只在飞出世界边界时消散
-      if (b.x < 0 || b.y < 0 || b.x > CONFIG.world.width || b.y > CONFIG.world.height) {
-        b.life = 0;
-      }
-    }
-    this.bullets = this.bullets.filter((b) => b.life > 0);
-
-    // 敌人: 朝玩家追击, 全屏活动(可穿墙来袭), 撞玩家自毁并扣血
-    for (const e of this.enemies) {
-      if (e.hp <= 0) continue;
-      if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
-      const dx = p.x - e.x, dy = p.y - e.y;
-      const len = Math.hypot(dx, dy) || 1;
-      e.x += (dx / len) * ENEMY_SPEED * dt;
-      e.y += (dy / len) * ENEMY_SPEED * dt;
-      // 世界边界钳制(允许穿墙, 但不能跑出地图, 否则相机会丢)
-      e.x = clamp(e.x, e.r, CONFIG.world.width - e.r);
-      e.y = clamp(e.y, e.r, CONFIG.world.height - e.r);
-      const rr = (e.r + p.radius) * 0.9;
-      if (dx * dx + dy * dy < rr * rr) {
-        this._hurtPlayer("enemy");
-        e.hp = 0;
-        g.particles.burst(e.x, e.y, "#ff6b7d", 18, 240, 3, 0.5);
+        if (Math.floor(this.elapsed * 30) % 3 === 0) {
+          g.particles.spark(p.x, p.y, rand(-40, 40), rand(-40, 40), 0.25, this.theme.wall, 2.2);
+        }
+      } else {
+        this._wallHit = false;
       }
     }
-    this.enemies = this.enemies.filter((e) => e.hp > 0);
 
-    // 拾取能量星
+    // ---- 3) 玩家武器 ----
+    p._updateWeapons(dt, g);
+
+    // ---- 4) 阶段专属调度: 通道刷杂兵, finale 推 Boss 战 ----
+    if (this.phase === "finale") {
+      this._updateFinale(dt);
+    } else {
+      this._spawnT -= dt;
+      if (this._spawnT <= 0) {
+        this._spawnT += this._spawnInterval;
+        this._spawnWave();
+      }
+    }
+
+    // ---- 5) 敌人 AI + 网格重建 (复用无限模式 Enemy.update) ----
+    for (const e of g.enemies) e.update(dt, p, g);
+    g.grid.rebuild(g.enemies);
+
+    // ---- 6) 子弹推进 + 离屏回收 (与 Game.update 保持一致) ----
+    for (const b of g.projectiles) {
+      b.update(dt);
+      if (b.active && !g.camera.inView(b.x, b.y, 200)) b.active = false;
+    }
+    for (const b of g.enemyProjectiles) {
+      b.update(dt);
+      if (b.active && !g.camera.inView(b.x, b.y, 200)) b.active = false;
+    }
+
+    // ---- 7) 碰撞 ----
+    // 7a) 玩家子弹 vs 敌人: 复用 CollisionSystem 的实现, 逻辑与无限模式完全一致.
+    g.collisionSystem._projectilesVsEnemies();
+    // 7b) 敌人 vs 玩家: 用 3 心系统, 不调 player.takeDamage.
+    for (const e of g.enemies) {
+      if (!e.active) continue;
+      const rr = e.radius + p.radius;
+      const dx = e.x - p.x, dy = e.y - p.y;
+      if (dx * dx + dy * dy <= rr * rr) { this._hurtPlayer("enemy"); break; }
+    }
+    // 7c) 敌方弹幕 vs 玩家: 3 心, 命中即销毁弹幕
+    for (const b of g.enemyProjectiles) {
+      if (!b.active) continue;
+      const rr = b.radius + p.radius;
+      const dx = b.x - p.x, dy = b.y - p.y;
+      if (dx * dx + dy * dy <= rr * rr) {
+        this._hurtPlayer("bullet");
+        b.active = false;
+      }
+    }
+
+    // ---- 8) 每帧清 gems 池: 击杀敌人默认会掉经验, 闯关不使用经验/升级 ----
+    g._gemPool.clear();
+
+    // ---- 9) 星星拾取 ----
     for (const s of this.stars) {
       if (s.got) continue;
       if (Vector2.distSq(p, s) < (p.radius + STAR_R) ** 2) {
@@ -2146,28 +2438,29 @@ class LevelRunner {
       }
     }
 
-    // 粒子/相机
+    // ---- 10) 粒子/相机 + 池回收 ----
     g.particles.update(dt);
     g.camera.update(p, dt);
+    g._enemyPool.reclaim();
+    g._projPool.reclaim();
+    g._ebPool.reclaim();
 
-    // 通关: 抵达终点纵向阈值
-    if (p.y <= this.finish.y + FINISH_PAD) {
-      const got = this.stars.filter((s) => s.got).length;
-      g.audio.bossKill && g.audio.bossKill();
-      g.screenFlash(0.7);
-      g.camera.shake(24);
-      g.particles.burst(p.x, p.y, this.theme.glow, 40, 320, 5, 1.0);
-      this._finish("clear", got);
+    // ---- 11) 通关判定:
+    //  corridor 阶段抵达路径终点 → 若有 finale 切入 Boss 战, 否则直接结算 clear.
+    //  finale 阶段的通关在 _updateFinale 内触发 _finish("clear", 3).
+    if (this.phase === "corridor" && p.y <= this.finish.y + FINISH_PAD) {
+      this._enterFinaleOrClear();
       return;
     }
 
-    // 超时失败
+    // ---- 12) 超时失败: finale 段时间用尽也算失败, 但保留通道段获得的星数作保底 ----
     this.timeLeft -= dt;
     if (this.timeLeft <= 0) {
       this.timeLeft = 0;
       g.audio.gameover && g.audio.gameover();
       g.camera.shake(20);
-      this._finish("fail", 0);
+      const savedStars = this.phase === "finale" ? this.finale.corridorStars : 0;
+      this._finish("fail", savedStars);
     }
   }
 
@@ -2179,18 +2472,33 @@ class LevelRunner {
 
     cam.begin(ctx);
     this._drawBackground(ctx);
-    this._drawCorridor(ctx);
-    this._drawMarkers(ctx);
-    this._drawStars(ctx);
-    this._drawEnemies(ctx);
-    this._drawBullets(ctx);
+    if (this.phase === "finale") {
+      this._drawArena(ctx);
+    } else {
+      this._drawCorridor(ctx);
+      this._drawMarkers(ctx);
+      this._drawStars(ctx);
+    }
+
+    // 敌人(在通道之上, 玩家之下), 完全复用 Enemy.render 的霓虹几何造型
+    for (const e of g.enemies) if (cam.inView(e.x, e.y)) e.render(ctx);
+
+    // 玩家子弹 / 光束: lighter 混合出霓虹能量质感, 与无限模式一致
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (const b of g.projectiles) b.render(ctx);
+    ctx.restore();
+
+    // 敌方弹幕: 普通混合, 敌意光球
+    for (const b of g.enemyProjectiles) b.render(ctx);
+
     this._drawPlayer(ctx);
     g.particles.render(ctx);
     cam.end(ctx);
 
     this._drawHud(ctx);
 
-    // 通关瞬间的全屏白闪(演出)
+    // 通关/受击瞬间的全屏白闪(演出)
     if (g.flash > 0.001) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, g.flash);
@@ -2225,44 +2533,97 @@ class LevelRunner {
     for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
   }
 
+  /**
+   * 构造整条通道形体为单个 Path2D: 所有段矩形 + 所有拐点圆盘的**几何并集**.
+   * expand 为整体外扩量, 用于分层同心带(外发光墙 / 深色地面 / 主题地面).
+   *
+   * 绕向坑(重要): Canvas y 轴向下, 屏幕坐标里
+   *  - 段矩形按 a+n→b+n→b-n→a-n 是「逆时针」;
+   *  - arc(0, TAU) 默认 anticlockwise=false, 屏幕上是「顺时针」.
+   * 两者相反, nonzero 规则下重叠区域绕数=0 会变成「洞」——即通道内部露出背景, 视觉与判定都对不上.
+   * 解决: 圆盘用 anticlockwise=true, 与段矩形同为逆时针; 重叠区域绕数=2, 仍算内部, 视觉纯并集.
+   */
+  _buildCorridorPath(expand) {
+    const p = new Path2D();
+    const path = this.level.path;
+    // 段矩形: 屏幕坐标下为逆时针
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len; // 单位法线
+      const r = this._segRadius(i) + expand;
+      p.moveTo(a.x + nx * r, a.y + ny * r);
+      p.lineTo(b.x + nx * r, b.y + ny * r);
+      p.lineTo(b.x - nx * r, b.y - ny * r);
+      p.lineTo(a.x - nx * r, a.y - ny * r);
+      p.closePath();
+    }
+    // 拐点圆盘(与段矩形同向): 半径取相邻段较大 r, 兼作首尾端点
+    for (let i = 0; i < path.length; i++) {
+      const rPrev = i > 0 ? this._segRadius(i - 1) : this._segRadius(0);
+      const rNext = i < path.length - 1 ? this._segRadius(i) : this._segRadius(path.length - 2);
+      const r = Math.max(rPrev, rNext) + expand;
+      p.moveTo(path[i].x + r, path[i].y);
+      p.arc(path[i].x, path[i].y, r, 0, TAU, true); // 逆时针, 与段矩形同向
+    }
+    return p;
+  }
+
   _drawCorridor(ctx) {
-    const r = this.level.radius;
     ctx.save();
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    // 外层: 发光墙壁
-    this._tracePath(ctx);
-    ctx.strokeStyle = this.theme.wall;
-    ctx.globalAlpha = 0.9;
-    ctx.shadowBlur = 26;
-    ctx.shadowColor = this.theme.wall;
-    ctx.lineWidth = 2 * r + 14;
-    ctx.stroke();
-    // 内层: 深色可行走地面(挖出通道)
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
-    this._tracePath(ctx);
-    ctx.strokeStyle = "#05070f";
-    ctx.lineWidth = 2 * r + 2;
-    ctx.stroke();
-    this._tracePath(ctx);
-    ctx.strokeStyle = this.theme.floor;
-    ctx.lineWidth = 2 * r;
-    ctx.stroke();
+    if (this._segWidths) {
+      // 分段变宽: 三层同心带都用整条 Path2D 一次 fill, shadow 只作用一次.
+      // 外层: 发光墙(扩 7)
+      const outer = this._buildCorridorPath(7);
+      ctx.shadowBlur = 26;
+      ctx.shadowColor = this.theme.wall;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = this.theme.wall;
+      ctx.fill(outer, "nonzero");
+      // 中层: 深色地面(原尺寸), 去 shadow
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#05070f";
+      ctx.fill(this._buildCorridorPath(1), "nonzero");
+      // 内层: 主题地面色(轻微收缩), 只有内部无外发光, 段间无套圈斑
+      ctx.fillStyle = this.theme.floor;
+      ctx.fill(this._buildCorridorPath(0), "nonzero");
+    } else {
+      // 等宽通道: 保持原来的整条 stroke 写法, 转折处衔接最平滑, 性能最佳.
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      const r = this.level.radius;
+      this._tracePath(ctx);
+      ctx.strokeStyle = this.theme.wall;
+      ctx.globalAlpha = 0.9;
+      ctx.shadowBlur = 26;
+      ctx.shadowColor = this.theme.wall;
+      ctx.lineWidth = 2 * r + 14;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      this._tracePath(ctx);
+      ctx.strokeStyle = "#05070f";
+      ctx.lineWidth = 2 * r + 2;
+      ctx.stroke();
+      this._tracePath(ctx);
+      ctx.strokeStyle = this.theme.floor;
+      ctx.lineWidth = 2 * r;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
   _drawMarkers(ctx) {
     const start = this.level.path[0];
     const fin = this.finish;
-    // 起点: 淡环
     ctx.save();
     ctx.globalAlpha = 0.5;
     ctx.strokeStyle = this.theme.wall;
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(start.x, start.y, 34, 0, TAU); ctx.stroke();
     ctx.restore();
-    // 终点: 脉动发光环 + "终点"
     const pulse = 0.5 + 0.5 * Math.sin(this.elapsed * 4);
     ctx.save();
     ctx.shadowBlur = 24; ctx.shadowColor = this.theme.glow;
@@ -2296,6 +2657,34 @@ class LevelRunner {
     }
   }
 
+  /** finale 阶段: 圆形竞技场——发光边环 + 深色地面, 与通道风格延续但区分明显 */
+  _drawArena(ctx) {
+    const a = this.finale.arena;
+    ctx.save();
+    // 深色地面
+    ctx.fillStyle = "#05070f";
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r + 6, 0, TAU); ctx.fill();
+    ctx.fillStyle = this.theme.floor;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, TAU); ctx.fill();
+    // 发光边环 + 脉动
+    const pulse = 0.5 + 0.5 * Math.sin(this.elapsed * 3);
+    ctx.strokeStyle = "#ff2bd6";
+    ctx.shadowBlur = 32; ctx.shadowColor = "#ff2bd6";
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = 6 + pulse * 3;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, TAU); ctx.stroke();
+    // 内圈装饰: 危险纹样
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = "#ff2bd6";
+    ctx.setLineDash([12, 18]);
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r * 0.72, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r * 0.38, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   /** 玩家无敌帧内做跳帧闪烁, 提示"当前不吃伤害" */
   _drawPlayer(ctx) {
     const p = this.game.player;
@@ -2303,81 +2692,47 @@ class LevelRunner {
     p.render(ctx);
   }
 
-  /** 敌人: 红色菱形几何体, 命中闪白, 造型与生存模式区分, 关卡不复用 Enemy 类 */
-  _drawEnemies(ctx) {
-    for (const e of this.enemies) {
-      ctx.save();
-      ctx.translate(e.x, e.y);
-      ctx.rotate(this.elapsed * 2);
-      ctx.shadowBlur = 16; ctx.shadowColor = "#ff6b7d";
-      ctx.fillStyle = e.flash > 0 ? "#ffffff" : "#ff2b4a";
-      ctx.strokeStyle = "#ffd23f";
-      ctx.lineWidth = 2;
-      const r = e.r;
-      ctx.beginPath();
-      ctx.moveTo(0, -r);
-      ctx.lineTo(r, 0);
-      ctx.lineTo(0, r);
-      ctx.lineTo(-r, 0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  /** 子弹: 沿运动方向的短彗尾, 复用玩家 accent 色 */
-  _drawBullets(ctx) {
-    for (const b of this.bullets) {
-      const sp = Math.hypot(b.vx, b.vy) || 1;
-      const ux = b.vx / sp, uy = b.vy / sp;
-      const tail = b.r * 2.4;
-      ctx.save();
-      ctx.shadowBlur = 12; ctx.shadowColor = b.color;
-      ctx.strokeStyle = b.color;
-      ctx.lineCap = "round";
-      ctx.lineWidth = b.r * 1.6;
-      ctx.beginPath();
-      ctx.moveTo(b.x - ux * tail, b.y - uy * tail);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.6, 0, TAU); ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  /** 屏幕空间 HUD: 关卡名 / 倒计时 / 星星进度 / 生命值(三颗心) */
+  /** 屏幕空间 HUD: 关卡名 / 倒计时 / 星星进度 / 生命值 / (finale 阶段的 Boss 血条) */
   _drawHud(ctx) {
     const W2 = this.game.viewW;
     const got = this.stars.filter((s) => s.got).length;
     const total = this.stars.length;
     const t = Math.max(0, this.timeLeft);
     const urgent = t <= 6;
+    const inFinale = this.phase === "finale";
 
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    // 关卡编号 + 名称
-    ctx.fillStyle = "#8fa9c8";
+    ctx.fillStyle = inFinale ? "#ff6b7d" : "#8fa9c8";
     ctx.font = "600 13px 'JetBrains Mono', monospace";
-    ctx.fillText(`${this.level.id}  ${this.level.name}`, W2 / 2, 16);
-    // 倒计时
+    const title = inFinale
+      ? `${this.level.id}  ${this.level.name}  ·  终章决战`
+      : `${this.level.id}  ${this.level.name}`;
+    ctx.fillText(title, W2 / 2, 16);
     ctx.font = "800 40px 'JetBrains Mono', monospace";
     ctx.fillStyle = urgent ? "#ff6b7d" : "#e8f6ff";
     ctx.shadowBlur = 16;
     ctx.shadowColor = urgent ? "#ff2bd6" : "#00f0ff";
     ctx.fillText(t.toFixed(1), W2 / 2, 34);
-    // 星星进度
-    ctx.shadowBlur = 10; ctx.shadowColor = "#ffd23f";
-    ctx.font = "700 24px 'JetBrains Mono', monospace";
-    let stars = "";
-    for (let i = 0; i < total; i++) stars += i < got ? "★" : "☆";
-    ctx.fillStyle = "#ffd23f";
-    ctx.fillText(stars, W2 / 2, 84);
+    // 星星进度: finale 阶段固定显示"击败 x/N Boss"
+    ctx.shadowBlur = 10;
+    ctx.font = "700 22px 'JetBrains Mono', monospace";
+    if (inFinale) {
+      ctx.shadowColor = "#ff2bd6";
+      ctx.fillStyle = "#ff2bd6";
+      ctx.fillText(`Boss ${this.finale.killed} / ${this.finale.total}`, W2 / 2, 86);
+    } else {
+      ctx.shadowColor = "#ffd23f";
+      ctx.fillStyle = "#ffd23f";
+      let stars = "";
+      for (let i = 0; i < total; i++) stars += i < got ? "★" : "☆";
+      ctx.font = "700 24px 'JetBrains Mono', monospace";
+      ctx.fillText(stars, W2 / 2, 84);
+    }
     ctx.restore();
 
-    // 生命值: 左上角三颗心, 已损失显示为暗轮廓; 无敌帧内整体闪烁提示
+    // 生命值心形
     ctx.save();
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
@@ -2391,6 +2746,43 @@ class LevelRunner {
       ctx.fillStyle = alive ? "#ff4a7f" : "#3a2130";
       ctx.fillText("♥", 20 + i * 30, 18);
     }
+    ctx.restore();
+
+    // finale 阶段: 顶部横向 Boss 血条(当前 Boss)
+    if (inFinale && this.finale.active && this.finale.active.active) {
+      this._drawBossBar(ctx, this.finale.active, W2);
+    }
+  }
+
+  /** 简洁的顶部 Boss 血条 + 名称, 独立于生存模式 HUD 的 _bossBars */
+  _drawBossBar(ctx, boss, W2) {
+    const w = Math.min(560, W2 * 0.6);
+    const x = (W2 - w) / 2;
+    const y = 120;
+    const h = 12;
+    const ratio = Math.max(0, boss.hp / boss.maxHp);
+    const color = boss.color || "#ff2bd6";
+    const name = (boss.def && boss.def.name) || "Boss";
+    ctx.save();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "700 14px 'JetBrains Mono', monospace";
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 10; ctx.shadowColor = color;
+    ctx.fillText(`⚠ ${name}  ${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`, x, y - 6);
+    ctx.shadowBlur = 0;
+    // 底槽
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(x, y, w, h);
+    // 前景
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 14; ctx.shadowColor = color;
+    ctx.fillRect(x, y, w * ratio, h);
+    // 描边
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     ctx.restore();
   }
 }
@@ -3324,8 +3716,9 @@ class Player {
     // 效果 1: 对屏内敌人造成重创（Boss 也吃, 但伤害有上限, 避免一键秒 Boss）
     const cam = game.camera;
     const pad = 40;
+    // 用 camera 的世界坐标可视区尺寸, 保证 worldZoom(移动端缩放) 下实际能看到的敌人都覆盖到.
     const minX = cam.x - pad, minY = cam.y - pad;
-    const maxX = cam.x + game.viewW + pad, maxY = cam.y + game.viewH + pad;
+    const maxX = cam.x + cam.worldViewW + pad, maxY = cam.y + cam.worldViewH + pad;
     const dmgNormal = 9999;
     const dmgBoss = 240 + this.level * 12; // 缓和的 Boss 伤害曲线
     for (const e of game.enemies) {
@@ -3421,15 +3814,30 @@ class Player {
     if (hops > 0) game.audio.hit();
   }
 
+  /**
+   * 灼蚀场生效半径.
+   *  - PC(视口宽 >= 720): 直接用武器 radius, 保持养成手感.
+   *  - 移动端(视口宽 < 720): 限制半径 <= 视口宽度的 25%(即直径覆盖 <= 屏宽 50%),
+   *    避免范围铺满屏幕导致小屏画面被荧光淹没且失去挑战性.
+   * radius 存储值不变(避免影响升级面板显示与再次升级的乘数计算), 只在判定/渲染时钳制.
+   */
+  _auraEffRadius(game) {
+    const r = this.weapons.aura.radius;
+    if (!game || game.viewW >= 720) return r;
+    return Math.min(r, game.viewW * 0.25);
+  }
+
   /** 灼蚀场：以玩家为中心的持续范围伤害（经空间网格查询近邻） */
   _tickAura(dt, game) {
     const w = this.weapons.aura;
     if (w.radius <= 0) return; // 未解锁
+    // 记录当前视口宽度, 供 render() 时同步限制半径(渲染无 game 上下文)
+    this._viewW = game.viewW;
     this._timers.aura -= dt;
     if (this._timers.aura > 0) return;
     this._timers.aura = w.tick;
     const dmg = w.damage * w.tick * this.damageMul;
-    const rr = w.radius;
+    const rr = this._auraEffRadius(game);
     game.grid.queryCircle(this.x, this.y, rr + 32, (e) => {
       if (!e.active) return;
       if (Vector2.distSq(e, this) < (rr + e.radius) ** 2) {
@@ -3491,15 +3899,16 @@ class Player {
 
   render(ctx) {
     const a = this.weapons.aura;
-    // 灼蚀场视觉
+    // 灼蚀场视觉: 与判定一致地在移动端 clamp 到视口宽度 25%(直径 <= 50%)
     if (a.radius > 0) {
+      const rr = (this._viewW && this._viewW < 720) ? Math.min(a.radius, this._viewW * 0.25) : a.radius;
       ctx.save();
       ctx.globalAlpha = 0.10;
       ctx.fillStyle = a.accent;
-      ctx.beginPath(); ctx.arc(this.x, this.y, a.radius, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(this.x, this.y, rr, 0, TAU); ctx.fill();
       ctx.globalAlpha = 0.4; ctx.strokeStyle = a.accent; ctx.lineWidth = 1.5;
       ctx.shadowBlur = 12; ctx.shadowColor = a.accent;
-      ctx.beginPath(); ctx.arc(this.x, this.y, a.radius, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(this.x, this.y, rr, 0, TAU); ctx.stroke();
       ctx.restore();
     }
 
@@ -3725,6 +4134,25 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/main.js"] = function (exports, re
  */
 const {Game} = require("/Users/fiona/Desktop/neon-survivors/js/core/Game.js");
 
+/**
+ * 禁用移动端双击放大 / 双指手势缩放.
+ * - viewport meta 的 user-scalable=no 在 iOS Safari 10+ 被忽略, 只能靠 CSS + JS.
+ * - CSS 已给 body/screen 加了 touch-action: manipulation (禁双击缩放).
+ * - 这里再阻止 gesturestart 系列 (双指) 与 dblclick (双击) 兜底.
+ * - 使用 passive:false 才能 preventDefault.
+ */
+function disableMobileZoom() {
+  const stop = (e) => e.preventDefault();
+  window.addEventListener("dblclick", stop, { passive: false });
+  window.addEventListener("gesturestart", stop, { passive: false });
+  window.addEventListener("gesturechange", stop, { passive: false });
+  window.addEventListener("gestureend", stop, { passive: false });
+  // 兜底: 双指 touchmove (Android/一些 WebView 上双指仍会缩放)
+  window.addEventListener("touchmove", (e) => {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+}
+
 function bootstrap() {
   const canvas = document.getElementById("game");
   const uiRoot = document.getElementById("ui-root");
@@ -3732,6 +4160,8 @@ function bootstrap() {
     console.error("[NEON DRIFT] 缺少必要的 DOM 节点。");
     return;
   }
+
+  disableMobileZoom();
 
   const game = new Game(canvas, uiRoot);
   requestAnimationFrame((t) => {
@@ -3753,75 +4183,263 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/systems/Campaign.js"] = function 
  * Campaign.js — 闯关模式的数据源与进度逻辑（单一数据源）。
  *
  * 设计：
- *  - 关卡按「章节」组织, 每章有独立主题(配色)与玩法类型(type)。
- *  - 关卡编码为 "章-关"(如 "1-1"), 每关最高 3 星(沿路线可收集的星星数)。
+ *  - 关卡按「章节」组织, 每章 10 关(1..9 常规通道关, 第 10 关为 Boss 关)。
+ *  - 关卡编码为 "章-关"(如 "1-1"), 每关最高 3 星。
  *  - 解锁规则:
  *      · 章节: 第 1 章默认解锁; 后续章节需上一章累计星数达到 reqStars。
  *      · 关卡: 所属章节需已解锁; 每章第 1 关默认可玩, 其余关需上一关已通关。
  *  - 进度存于 save.campaign.levels[关卡id] = 星数(0..3), 键存在即代表已通关。
  *
- * 目前 type 仅实现 "path"(路线走廊: 从下方出发抵达上方终点, 沿途收集星星, 有时间限制)。
- * 新增玩法只需扩展 type 与对应的关卡引擎分支, 数据在此追加即可。
+ * 玩法 type:
+ *  - "path"  路线走廊: 从下方出发抵达上方终点, 沿途收集星星, 有时间限制。
+ *              可选 widths(每段独立半宽), spawn({interval, batch}) 覆盖生成节奏,
+ *              enemyTiers(每关允许敌种池, 覆盖默认按时间解锁), speedMul/hpMul(缩放)。
+ *              可选 finale(终章 Boss 战): 抵达路径终点后不通关, 切入圆形竞技场依次挑战 Boss。
  *
- * 坐标系: 关卡在 3200×3200 的世界空间内布局(与相机边界一致)。
- *  y 越大越靠下, 起点在下方(大 y), 终点在上方(小 y)。
+ * 坐标系: 关卡在 3200×3200 的世界空间内布局。y 大在下, 起点 y ≈ 2980, 终点 y 小。
+ *
+ * 星星坐标: 用 pathPoint(path, t) 沿路径按累积长度比例(0..1)插值,
+ *           保证星星**永远落在通道中心线上**, 无论通道多窄多弯都不会飞到路径外.
  */
 
-// 世界尺寸(与 config.world 保持一致, 供关卡布点参考)
+// 世界尺寸(与 config.world 保持一致)
 const W = 3200;
 
-/** 路线关卡工厂: 给定路点/星星/时间, 补齐默认字段 */
-function pathLevel(id, name, { radius, timeLimit, path, stars }) {
-  return { id, name, type: "path", radius, timeLimit, path, stars };
+/**
+ * 沿折线 path 按累积长度比例 t(0..1) 取一个点.
+ * 用作 star 布置: 天然在路径中心线上, 无论通道形态都在合法可行走区域内.
+ */
+function pathPoint(path, t) {
+  const clamped = Math.max(0, Math.min(1, t));
+  // 累积段长
+  const lens = [];
+  let total = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const dx = path[i + 1].x - path[i].x;
+    const dy = path[i + 1].y - path[i].y;
+    const l = Math.hypot(dx, dy);
+    lens.push(l);
+    total += l;
+  }
+  let target = clamped * total;
+  for (let i = 0; i < lens.length; i++) {
+    if (target <= lens[i] || i === lens.length - 1) {
+      const k = lens[i] > 0 ? target / lens[i] : 0;
+      return {
+        x: path[i].x + (path[i + 1].x - path[i].x) * k,
+        y: path[i].y + (path[i + 1].y - path[i].y) * k,
+      };
+    }
+    target -= lens[i];
+  }
+  return { ...path[path.length - 1] };
 }
 
+/** 三颗星: 均匀分布在路径 1/4, 1/2, 3/4 处 */
+function trisect(path) {
+  return [pathPoint(path, 0.25), pathPoint(path, 0.5), pathPoint(path, 0.75)];
+}
+
+/** 路线关卡工厂 */
+function pathLevel(id, name, opts) {
+  const path = opts.path;
+  return {
+    id, name, type: "path",
+    radius: opts.radius,
+    widths: opts.widths,
+    timeLimit: opts.timeLimit,
+    path,
+    // stars 未显式传入时, 自动均分在路径上, 保证一定在通道内
+    stars: opts.stars || trisect(path),
+    spawn: opts.spawn,
+    enemyTiers: opts.enemyTiers,
+    speedMul: opts.speedMul || 1,
+    hpMul: opts.hpMul || 1,
+    finale: opts.finale,
+  };
+}
+
+/**
+ * 第一章 10 关设计: 每关一个独特形状(直线 / 弧 / 波 / U / 锯齿 / 十字 / 螺旋 / 极窄折线),
+ * 难度从 chaser 单敌种 + 慢速渐进到四敌种 + 2.3× 速度 + 1.35× 血, 最后 Boss 关.
+ * 起点固定 (1600, 2980), 常规关终点 (1600, 240); 1-10 通道终点在竞技场入口 (1600, 1180).
+ */
 const CHAPTERS = [
   {
     id: 1,
     name: "起源回廊",
     sub: "ORIGIN CORRIDOR",
-    intro: "沿着霓虹通道向上突进, 抵达顶端信标, 沿途拾取能量星。切勿撞出通道之外。",
+    intro: "沿着霓虹通道向上突进, 抵达顶端信标, 沿途拾取能量星。第 10 关是 Boss 终章。",
     reqStars: 0,
     theme: { wall: "#00f0ff", floor: "rgba(0,54,74,0.42)", glow: "#00f0ff", grid: "rgba(0,240,255,0.06)" },
     levels: [
-      pathLevel("1-1", "启程信标", {
-        radius: 135, timeLimit: 32,
-        // 平缓的 S 形通道, 新手友好
+      // ============ 1-1 「起航」直上通道 ============
+      // 形状: 纯垂直中轴. 教学关, 只熟悉移动/射击.
+      pathLevel("1-1", "起航", {
+        radius: 160, timeLimit: 34,
         path: [
-          { x: 1600, y: 2980 }, { x: 1600, y: 2520 },
-          { x: 1230, y: 2120 }, { x: 1230, y: 1680 },
-          { x: 1930, y: 1260 }, { x: 1930, y: 840 },
-          { x: 1600, y: 480 },  { x: 1600, y: 240 },
-        ],
-        stars: [
-          { x: 1230, y: 2120 }, { x: 1930, y: 1050 }, { x: 1600, y: 420 },
-        ],
-      }),
-      pathLevel("1-2", "曲折脉冲", {
-        radius: 112, timeLimit: 30,
-        // 更多转折, 通道更窄
-        path: [
-          { x: 1600, y: 2980 }, { x: 2050, y: 2600 },
-          { x: 1150, y: 2260 }, { x: 2000, y: 1900 },
-          { x: 1100, y: 1520 }, { x: 1900, y: 1140 },
-          { x: 1250, y: 760 },  { x: 1600, y: 240 },
-        ],
-        stars: [
-          { x: 1600, y: 2430 }, { x: 1520, y: 1710 }, { x: 1420, y: 950 },
-        ],
-      }),
-      pathLevel("1-3", "临界穿越", {
-        radius: 96, timeLimit: 30,
-        // 最窄且转折密集, 收尾关
-        path: [
-          { x: 1600, y: 2980 }, { x: 1200, y: 2700 }, { x: 2000, y: 2440 },
-          { x: 1200, y: 2140 }, { x: 2050, y: 1840 }, { x: 1150, y: 1520 },
-          { x: 2000, y: 1180 }, { x: 1250, y: 820 },  { x: 1750, y: 480 },
+          { x: 1600, y: 2980 }, { x: 1600, y: 2200 },
+          { x: 1600, y: 1400 }, { x: 1600, y: 700 },
           { x: 1600, y: 240 },
         ],
-        stars: [
-          { x: 1600, y: 2570 }, { x: 1600, y: 1680 }, { x: 1500, y: 650 },
+        spawn: { interval: 2.2, batch: 1 },
+        enemyTiers: ["chaser"],
+        speedMul: 1.4,
+      }),
+
+      // ============ 1-2 「弯月」右侧大弧 ============
+      // 形状: 单侧向右鼓出的大 C 形. 首次引入 rusher.
+      pathLevel("1-2", "弯月", {
+        radius: 140, timeLimit: 32,
+        path: [
+          { x: 1600, y: 2980 }, { x: 2300, y: 2600 },
+          { x: 2500, y: 1900 }, { x: 2400, y: 1200 },
+          { x: 1900, y: 700 },  { x: 1600, y: 240 },
         ],
+        spawn: { interval: 1.8, batch: 2 },
+        enemyTiers: ["chaser", "rusher"],
+        speedMul: 1.5,
+      }),
+
+      // ============ 1-3 「波纹」正弦波浪 ============
+      // 形状: 左右等幅波浪, 连续但不急. 引入 splitter.
+      pathLevel("1-3", "波纹", {
+        radius: 128, timeLimit: 32,
+        path: [
+          { x: 1600, y: 2980 }, { x: 1050, y: 2600 },
+          { x: 2150, y: 2200 }, { x: 1050, y: 1800 },
+          { x: 2150, y: 1400 }, { x: 1050, y: 1000 },
+          { x: 1600, y: 500 },  { x: 1600, y: 240 },
+        ],
+        spawn: { interval: 1.5, batch: 2 },
+        enemyTiers: ["chaser", "rusher", "splitter"],
+        speedMul: 1.6,
+      }),
+
+      // ============ 1-4 「回廊」U 型转弯 ============
+      // 形状: 先右探顶再横穿到左再上. 有大幅度转向, 拐点密.
+      pathLevel("1-4", "回廊", {
+        radius: 125, timeLimit: 36,
+        path: [
+          { x: 1600, y: 2980 }, { x: 2500, y: 2500 },
+          { x: 2500, y: 1700 }, { x: 600,  y: 1700 },
+          { x: 600,  y: 900 },  { x: 1600, y: 240 },
+        ],
+        spawn: { interval: 1.4, batch: 2 },
+        enemyTiers: ["chaser", "rusher", "splitter", "tank"],
+        speedMul: 1.7,
+        hpMul: 1.1,
+      }),
+
+      // ============ 1-5 「锐角」直角折线 ============
+      // 形状: 90 度硬转折, 类似方波. 需要在拐点急停调向.
+      pathLevel("1-5", "锐角", {
+        radius: 115, timeLimit: 36,
+        path: [
+          { x: 1600, y: 2980 }, { x: 1600, y: 2700 },
+          { x: 2400, y: 2700 }, { x: 2400, y: 2100 },
+          { x: 800,  y: 2100 }, { x: 800,  y: 1500 },
+          { x: 2400, y: 1500 }, { x: 2400, y: 900 },
+          { x: 1600, y: 900 },  { x: 1600, y: 240 },
+        ],
+        spawn: { interval: 1.2, batch: 2 },
+        enemyTiers: ["chaser", "rusher", "splitter"],
+        speedMul: 1.8,
+        hpMul: 1.15,
+      }),
+
+      // ============ 1-6 「洪流」宽窄反差 ============
+      // 形状: 波浪但宽窄剧烈交替(150 ↔ 90), 宽段清怪, 窄段专注走位.
+      pathLevel("1-6", "洪流", {
+        radius: 110, timeLimit: 34,
+        path: [
+          { x: 1600, y: 2980 }, { x: 2100, y: 2600 },
+          { x: 1100, y: 2200 }, { x: 2100, y: 1800 },
+          { x: 1100, y: 1400 }, { x: 2100, y: 1000 },
+          { x: 1600, y: 500 },  { x: 1600, y: 240 },
+        ],
+        widths: [155, 88, 155, 88, 155, 88, 155],
+        spawn: { interval: 1.05, batch: 3 },
+        enemyTiers: ["rusher", "tank", "splitter"],
+        speedMul: 1.9,
+        hpMul: 1.2,
+      }),
+
+      // ============ 1-7 「针尖」极窄之字 ============
+      // 形状: 密集左右抖动, 窄通道 78, 敌人速度 2.0×. 走位极限.
+      pathLevel("1-7", "针尖", {
+        radius: 78, timeLimit: 32,
+        path: [
+          { x: 1600, y: 2980 }, { x: 1350, y: 2700 },
+          { x: 1850, y: 2400 }, { x: 1350, y: 2100 },
+          { x: 1850, y: 1800 }, { x: 1350, y: 1500 },
+          { x: 1850, y: 1200 }, { x: 1350, y: 900 },
+          { x: 1850, y: 600 },  { x: 1600, y: 240 },
+        ],
+        spawn: { interval: 1.05, batch: 2 },
+        enemyTiers: ["chaser", "rusher"],
+        speedMul: 2.0,
+        hpMul: 1.2,
+      }),
+
+      // ============ 1-8 「潮汐」十字大幅 ============
+      // 形状: 大幅横穿 + 大幅纵进. 拐点少但每段特别长, 沿途持续压力.
+      pathLevel("1-8", "潮汐", {
+        radius: 108, timeLimit: 40,
+        path: [
+          { x: 1600, y: 2980 }, { x: 1600, y: 2500 },
+          { x: 500,  y: 2500 }, { x: 500,  y: 1700 },
+          { x: 2700, y: 1700 }, { x: 2700, y: 900 },
+          { x: 1600, y: 900 },  { x: 1600, y: 240 },
+        ],
+        spawn: { interval: 0.95, batch: 3 },
+        enemyTiers: ["chaser", "rusher", "splitter", "tank"],
+        speedMul: 2.1,
+        hpMul: 1.25,
+      }),
+
+      // ============ 1-9 「织网」折返螺旋 ============
+      // 形状: 大幅左右折返(近全屏), 有变宽. 综合考验.
+      pathLevel("1-9", "织网", {
+        radius: 100, timeLimit: 42,
+        path: [
+          { x: 1600, y: 2980 }, { x: 2500, y: 2650 },
+          { x: 500,  y: 2450 }, { x: 500,  y: 1900 },
+          { x: 2500, y: 1750 }, { x: 2500, y: 1250 },
+          { x: 500,  y: 1100 }, { x: 500,  y: 700 },
+          { x: 1600, y: 240 },
+        ],
+        widths: [115, 92, 115, 92, 115, 92, 115, 92],
+        spawn: { interval: 0.85, batch: 3 },
+        enemyTiers: ["chaser", "rusher", "splitter", "tank"],
+        speedMul: 2.2,
+        hpMul: 1.3,
+      }),
+
+      // ============ 1-10 「母核降临」极限窄折线 + 终章 Boss ============
+      // 形状 1: 前段极限窄之字通道抵达世界中部;
+      // 形状 2: 抵达通道终点 (1600, 1180) 后触发 finale: 圆形竞技场三 Boss 战.
+      // 通关条件: 击败全部 Boss(3 星); 通道段拿到的星数作为失败保底.
+      pathLevel("1-10", "母核降临", {
+        radius: 88, timeLimit: 100,
+        path: [
+          { x: 1600, y: 2980 }, { x: 2400, y: 2700 },
+          { x: 1200, y: 2450 }, { x: 2400, y: 2200 },
+          { x: 1200, y: 1950 }, { x: 2400, y: 1700 },
+          { x: 1200, y: 1450 }, { x: 1600, y: 1180 },
+        ],
+        widths: [95, 82, 92, 78, 92, 78, 90],
+        spawn: { interval: 0.85, batch: 3 },
+        enemyTiers: ["rusher", "splitter", "tank"],
+        speedMul: 2.3,
+        hpMul: 1.35,
+        finale: {
+          arena: { x: 1600, y: 900, r: 620 },
+          bosses: ["boss_nucleus", "boss_flux", "boss_void"],
+          interval: 2.5,
+          hpMul: 1.0,
+          spawn: { interval: 3.0, batch: 1, tiers: ["chaser", "rusher"] },
+        },
       }),
     ],
   },
@@ -3830,12 +4448,19 @@ const CHAPTERS = [
     name: "熔核裂隙",
     sub: "MOLTEN RIFT",
     intro: "灼热熔核深处的试炼, 全新玩法正在锻造中。集齐前一章的星星以点亮此处。",
-    reqStars: 6, // 需第一章累计 6 星才能进入
+    reqStars: 20, // 需第一章累计 20 星
     theme: { wall: "#ff7a3d", floor: "rgba(70,24,10,0.42)", glow: "#ff7a3d", grid: "rgba(255,122,61,0.06)" },
     levels: [
-      { id: "2-1", name: "敬请期待", type: "coming" },
-      { id: "2-2", name: "敬请期待", type: "coming" },
-      { id: "2-3", name: "敬请期待", type: "coming" },
+      { id: "2-1",  name: "敬请期待", type: "coming" },
+      { id: "2-2",  name: "敬请期待", type: "coming" },
+      { id: "2-3",  name: "敬请期待", type: "coming" },
+      { id: "2-4",  name: "敬请期待", type: "coming" },
+      { id: "2-5",  name: "敬请期待", type: "coming" },
+      { id: "2-6",  name: "敬请期待", type: "coming" },
+      { id: "2-7",  name: "敬请期待", type: "coming" },
+      { id: "2-8",  name: "敬请期待", type: "coming" },
+      { id: "2-9",  name: "敬请期待", type: "coming" },
+      { id: "2-10", name: "敬请期待", type: "coming" },
     ],
   },
 ];
@@ -3850,17 +4475,15 @@ const Campaign = {
     return c && c.levels[li] ? c.levels[li] : null;
   },
 
-  /** 该关卡是否为「敬请期待」占位(不可进入) */
   isComing(level) { return !level || level.type === "coming"; },
+  isBoss(level) { return !!(level && level.finale); },
 
-  /** 已获得星数: 未通关返回 -1, 已通关返回 0..3 */
   stars(save, id) {
     const v = save.campaign && save.campaign.levels ? save.campaign.levels[id] : undefined;
     return typeof v === "number" ? Math.max(0, Math.min(3, v)) : -1;
   },
   isCleared(save, id) { return this.stars(save, id) >= 0; },
 
-  /** 记录一次通关成绩(取历史最高星数); 返回是否刷新了最高星 */
   record(save, id, stars) {
     if (!save.campaign) save.campaign = { levels: {} };
     if (!save.campaign.levels) save.campaign.levels = {};
@@ -3872,7 +4495,6 @@ const Campaign = {
     return improved;
   },
 
-  /** 某章节累计已得星数(仅统计可玩关卡) */
   chapterStars(save, ci) {
     const c = CHAPTERS[ci];
     if (!c) return 0;
@@ -3884,21 +4506,18 @@ const Campaign = {
     return sum;
   },
 
-  /** 某章节可玩关卡的满星总数 */
   chapterMaxStars(ci) {
     const c = CHAPTERS[ci];
     if (!c) return 0;
     return c.levels.filter((lv) => !this.isComing(lv)).length * 3;
   },
 
-  /** 全部累计已得星数 */
   totalStars(save) {
     let sum = 0;
     for (let i = 0; i < CHAPTERS.length; i++) sum += this.chapterStars(save, i);
     return sum;
   },
 
-  /** 章节是否解锁: 第一章恒解锁, 其余看上一章累计星数是否达标 */
   chapterUnlocked(save, ci) {
     if (ci <= 0) return true;
     const c = CHAPTERS[ci];
@@ -3906,7 +4525,6 @@ const Campaign = {
     return this.chapterStars(save, ci - 1) >= (c.reqStars || 0);
   },
 
-  /** 关卡是否解锁: 章节已解锁, 且为该章首关或上一关已通关 */
   levelUnlocked(save, ci, li) {
     if (!this.chapterUnlocked(save, ci)) return false;
     const c = CHAPTERS[ci];
@@ -4263,65 +4881,67 @@ __defs["/Users/fiona/Desktop/neon-survivors/js/systems/MetaProgression.js"] = fu
  *  - applyTo() 在开局把已购加成注入玩家初始属性 / 能力。
  */
 
+// 花费曲线设计: 单局产出约 100~300 核心(依赖表现), 全部买满合计需 ~9000+ 核心,
+// 即使高效玩家也需 40+ 局才能满级, 保证长期养成空间. baseCost 打底 + costGrow 陡增双重门槛.
 const META = [
   {
     id: "hp", icon: "♥", name: "强化装甲", accent: "#ff5c8a", max: 8,
-    baseCost: 10, costGrow: 1.55,
+    baseCost: 20, costGrow: 1.7,
     effect: "起始最大生命 +18 / 级",
   },
   {
     id: "dmg", icon: "⚡", name: "武器校准", accent: "#ffd23f", max: 8,
-    baseCost: 14, costGrow: 1.55,
+    baseCost: 28, costGrow: 1.7,
     effect: "全武器伤害 +7% / 级",
   },
   {
     id: "spd", icon: "➤", name: "引擎调校", accent: "#00f0ff", max: 6,
-    baseCost: 10, costGrow: 1.5,
+    baseCost: 20, costGrow: 1.65,
     effect: "移动速度 +4% / 级",
   },
   {
     id: "regen", icon: "✚", name: "纳米基质", accent: "#aaff00", max: 6,
-    baseCost: 12, costGrow: 1.5,
+    baseCost: 24, costGrow: 1.65,
     effect: "每秒回复 +0.4 / 级",
   },
   {
     id: "magnet", icon: "⬇", name: "引力核心", accent: "#8a5bff", max: 5,
-    baseCost: 8, costGrow: 1.5,
+    baseCost: 16, costGrow: 1.6,
     effect: "经验拾取范围 +15% / 级",
   },
   {
     id: "crit", icon: "✧", name: "暴击矩阵", accent: "#ff8a3d", max: 6,
-    baseCost: 15, costGrow: 1.55,
+    baseCost: 30, costGrow: 1.7,
     effect: "暴击率 +5% / 级（暴击造成 2 倍伤害）",
   },
   {
     id: "haste", icon: "⟳", name: "时序压缩", accent: "#00f0ff", max: 5,
-    baseCost: 16, costGrow: 1.6,
+    baseCost: 32, costGrow: 1.75,
     effect: "武器攻速 +4% / 级",
   },
   {
     id: "armor", icon: "◈", name: "相位护盾", accent: "#5cffd2", max: 5,
-    baseCost: 18, costGrow: 1.6,
+    baseCost: 36, costGrow: 1.75,
     effect: "受到伤害 -6% / 级",
   },
   {
     id: "xp", icon: "◇", name: "学习协议", accent: "#8a5bff", max: 5,
-    baseCost: 14, costGrow: 1.5,
+    baseCost: 28, costGrow: 1.65,
     effect: "经验获取 +8% / 级",
   },
   {
     id: "preload", icon: "★", name: "战术预载", accent: "#ffd23f", max: 3,
-    baseCost: 30, costGrow: 1.9,
+    baseCost: 60, costGrow: 2.1,
     effect: "开局额外获得 1 次强化选择 / 级",
   },
   {
     id: "revive", icon: "☯", name: "应急重构", accent: "#aaff00", max: 2,
-    baseCost: 60, costGrow: 2.2,
+    baseCost: 120, costGrow: 2.5,
     effect: "每局阵亡后原地复活一次 / 级",
   },
   {
     id: "greed", icon: "◆", name: "贪婪协议", accent: "#ff2bd6", max: 6,
-    baseCost: 20, costGrow: 1.6,
+    baseCost: 40, costGrow: 1.75,
     effect: "局末获得核心 +10% / 级",
   },
 ];
@@ -4850,10 +5470,11 @@ class SpawnSystem {
     const cam = this.game.camera;
     const pad = CONFIG.spawn.spawnPad;
     const angle = rand(0, TAU);
-    // 以屏幕中心 + 半屏对角线为半径，确保在视野外
-    const dist = Math.hypot(cam.viewW, cam.viewH) / 2 + pad;
-    const cx = cam.x + cam.viewW / 2;
-    const cy = cam.y + cam.viewH / 2;
+    // 用 camera 世界坐标可视区 (兼容 worldZoom 缩放): 保证敌人真正生成在玩家看不到的地方
+    const vw = cam.worldViewW, vh = cam.worldViewH;
+    const dist = Math.hypot(vw, vh) / 2 + pad;
+    const cx = cam.x + vw / 2;
+    const cy = cam.y + vh / 2;
     let x = cx + Math.cos(angle) * dist;
     let y = cy + Math.sin(angle) * dist;
     x = Math.max(20, Math.min(CONFIG.world.width - 20, x));
@@ -5462,7 +6083,7 @@ class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, user, { onStart, onResume, onCampaign, onShop, onHangar, onCodex, onAccount, onCloud, onLeaderboard }) {
+  showMenu(save, user, { onStart, onResume, onCampaign, onShop, onHangar, onCodex, onAccount, onCloud, onLeaderboard, onFeedback }) {
     this.clear();
     const b = save.best;
     const userBar = user
@@ -5495,6 +6116,7 @@ class Screens {
       `;
     const el = this._make(`
       ${userBar}
+      <button class="feedback-fab" id="btn-feedback" title="反馈 / 留言">💬</button>
       <div class="sub">ROGUELITE · SURVIVOR · 霓虹幸存者</div>
       <h1 class="neon-title">NEON DRIFT</h1>
       <div class="cores-balance">
@@ -5531,6 +6153,7 @@ class Screens {
     if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
     if (onCloud) el.querySelector("#btn-cloud").addEventListener("click", onCloud);
     if (onLeaderboard) el.querySelector("#btn-rank").addEventListener("click", onLeaderboard);
+    if (onFeedback) el.querySelector("#btn-feedback").addEventListener("click", onFeedback);
     if (onAccount) {
       const bar = el.querySelector("#user-bar");
       if (bar) bar.addEventListener("click", onAccount);
@@ -5566,18 +6189,24 @@ class Screens {
         const lvUnlocked = !coming && Campaign.levelUnlocked(save, ci, li);
         const stars = Campaign.stars(save, lv.id); // -1 未通关
         const cleared = stars >= 0;
+        const isBoss = Campaign.isBoss(lv);
         let cls = "lvl-card";
+        if (isBoss) cls += " lvl-boss";
         if (coming) cls += " lvl-coming";
         else if (!lvUnlocked) cls += " lvl-locked";
         else if (cleared) cls += " lvl-cleared";
-        const badge = coming ? "🚧" : (!lvUnlocked ? "🔒" : (cleared ? "✔" : "▶"));
+        // Boss 关用「☠」徽标; 其余按状态显示
+        const badge = coming ? "🚧"
+          : (!lvUnlocked ? "🔒"
+          : (isBoss ? "☠"
+          : (cleared ? "✔" : "▶")));
         const starsHTML = coming
           ? `<span class="lvl-soon">敬请期待</span>`
           : `<span class="lvl-stars">${this._starRow(stars)}</span>`;
         return `
           <button class="${cls}" data-ci="${ci}" data-li="${li}"
             ${(coming || !lvUnlocked) ? "disabled" : ""}
-            style="--glow:${glow}">
+            style="--glow:${isBoss ? "#ff2bd6" : glow}">
             <span class="lvl-id">${esc(lv.id)}</span>
             <span class="lvl-badge">${badge}</span>
             <span class="lvl-name">${esc(lv.name)}</span>
@@ -5732,18 +6361,32 @@ class Screens {
     el.querySelector("#btn-back").addEventListener("click", onBack);
   }
 
-  /** 升级三选一（左侧展示当前能力，右侧三张强化卡） */
+  /**
+   * 升级三选一。
+   * - 桌面: 左侧「当前装备」面板 + 右侧三张卡, hint 提示 1/2/3 快捷键.
+   * - 移动: 卡片纵向铺满一屏, 当前装备折叠到顶部「📊 当前能力」按钮, 点击弹窗展开.
+   *   目的: 一页不需要滚动即可完整看到三张卡片(小屏可读性).
+   */
   showLevelUp(player, choices, onPick) {
     this.clear();
     const el = this._make(`
-      <div class="sub">LEVEL UP · 等级 ${player.level}</div>
-      <h2 class="neon-title">选择强化</h2>
+      <div class="lu-head">
+        <div class="sub">LEVEL UP · 等级 ${player.level}</div>
+        <h2 class="neon-title">选择强化</h2>
+      </div>
       <div class="levelup-body">
         ${this._loadoutHTML(player)}
         <div class="cards"></div>
       </div>
+      <button class="btn lu-loadout-btn" id="btn-loadout" type="button">📊 当前能力</button>
       <div class="hint">${this.isTouch ? "点击卡片选择强化" : "按 1 / 2 / 3 快速选择"}</div>
-    `);
+      <div class="lu-modal" id="lu-modal" hidden>
+        <div class="lu-modal-inner">
+          ${this._loadoutHTML(player, "能力总览")}
+          <button class="btn lu-modal-close" id="lu-modal-close" type="button">关闭</button>
+        </div>
+      </div>
+    `, "levelup-screen");
     const cardsEl = el.querySelector(".cards");
     choices.forEach((u, i) => {
       const lv = UpgradeSystem.getLevel(player, u.id);
@@ -5762,6 +6405,12 @@ class Screens {
       cardsEl.appendChild(card);
     });
     this.root.appendChild(el);
+
+    // 「当前能力」弹窗: 打开/关闭 + 点空白遮罩关闭(内容区不响应)
+    const modal = el.querySelector("#lu-modal");
+    el.querySelector("#btn-loadout").addEventListener("click", () => { modal.hidden = false; });
+    el.querySelector("#lu-modal-close").addEventListener("click", () => { modal.hidden = true; });
+    modal.addEventListener("click", (e) => { if (e.target === modal) modal.hidden = true; });
   }
 
   /** 等级进度小圆点 */
@@ -5811,7 +6460,7 @@ class Screens {
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
         <button class="btn btn-2" id="btn-menu">主菜单</button>
       </div>
-    `);
+    `, "gameover-screen");
     this.root.appendChild(el);
     el.querySelector("#btn-restart").addEventListener("click", onRestart);
     el.querySelector("#btn-shop").addEventListener("click", onShop);
@@ -5845,17 +6494,34 @@ class Screens {
     const shards = save.skins.shards;
     const selected = Skins.selected(save);
     const canFree = Skins.canFreeDraw(save);
-    const freeBtn = canFree
-      ? `<button class="btn free-draw" id="btn-free">🎁 每日免费抽卡</button>`
-      : `<button class="btn free-draw claimed" id="btn-free" disabled>✓ 今日已领取</button>`;
+    const singlePrice = Skins.priceSingle();
+    const tenPrice = Skins.priceTen();
+    const canSingle = shards >= singlePrice;
+    const canTen = shards >= tenPrice;
+    // 抽卡面板: "单抽"槽位与"每日免费"合并——可领取免费时显示"每日免费"入口(柠檬绿),
+    // 领取后自动切换成"单抽 ✦ 100"(品红). 十连独立作为主推项.
+    // 棱牌不足时对应按钮 disabled + .poor 灰阶, 与商店购买按钮观感一致.
+    const singleSlotHTML = canFree
+      ? `<button class="gp-draw gp-single gp-free-mode" id="btn-single" data-mode="free">
+           <span class="gp-draw-title">每日免费单抽</span>
+           <span class="gp-draw-cost">🎁 今日可领</span>
+         </button>`
+      : `<button class="gp-draw gp-single" id="btn-single" data-mode="paid"${canSingle ? "" : " disabled"}>
+           <span class="gp-draw-title">单抽</span>
+           <span class="gp-draw-cost">✦ ${singlePrice}</span>
+         </button>`;
     const el = this._make(`
       <div class="sub">HANGAR · 机库</div>
       <h2 class="neon-title">战机外观</h2>
-      <div class="cores-balance"><span class="shard-amt">✦ ${shards}</span> <span class="lbl">棱牌</span></div>
-      <div class="gacha-bar">
-        ${freeBtn}
-        <button class="btn gacha-btn" id="btn-draw1">单抽 · ✦ ${Skins.priceSingle()}</button>
-        <button class="btn btn-2 gacha-btn" id="btn-draw10">十连 · ✦ ${Skins.priceTen()}</button>
+      <div class="gacha-panel">
+        <div class="gp-balance"><span class="shard-amt">✦ ${shards}</span><span class="gp-lbl">棱牌</span></div>
+        <div class="gp-actions">
+          ${singleSlotHTML}
+          <button class="gp-draw gp-ten" id="btn-draw10"${canTen ? "" : " disabled"}>
+            <span class="gp-draw-title">十连</span>
+            <span class="gp-draw-cost">✦ ${tenPrice}</span>
+          </button>
+        </div>
       </div>
       <div class="skin-grid"></div>
       <button class="btn btn-3" id="btn-back">← 返回</button>
@@ -5908,13 +6574,19 @@ class Screens {
     }
     this.root.appendChild(el);
 
-    const draw1 = el.querySelector("#btn-draw1");
+    const single = el.querySelector("#btn-single");
     const draw10 = el.querySelector("#btn-draw10");
-    if (shards < Skins.priceSingle()) { draw1.disabled = true; draw1.classList.add("poor"); }
-    if (shards < Skins.priceTen()) { draw10.disabled = true; draw10.classList.add("poor"); }
-    draw1.addEventListener("click", () => onDraw(1));
-    draw10.addEventListener("click", () => onDraw(10));
-    if (canFree && onFreeDraw) el.querySelector("#btn-free").addEventListener("click", onFreeDraw);
+    // paid 模式下棱牌不足: 加 .poor 灰阶(disabled 属性已在模板里设好)
+    if (single.dataset.mode === "paid" && !canSingle) single.classList.add("poor");
+    // 单抽槽位: data-mode 决定走哪条路径(free=每日免费, paid=消耗棱牌单抽)
+    single.addEventListener("click", () => {
+      if (single.disabled) return;
+      if (single.dataset.mode === "free") { if (onFreeDraw) onFreeDraw(); }
+      else { onDraw(1); }
+    });
+    // 十连: 棱牌不足时 disabled + .poor 灰阶提示
+    if (!canTen) draw10.classList.add("poor");
+    draw10.addEventListener("click", () => { if (!draw10.disabled) onDraw(10); });
     el.querySelector("#btn-back").addEventListener("click", onBack);
   }
 
@@ -5968,12 +6640,14 @@ class Screens {
         <div class="cp-bar"><div class="cp-fill" style="width:${prog.total ? (prog.owned / prog.total * 100).toFixed(1) : 0}%"></div></div>
         <div class="cp-text">收集进度 <b>${prog.owned}</b> / ${prog.total}</div>
       </div>
-      <div class="codex-body"></div>
-      <div class="codex-achv-title">
-        <span class="cat-tag">ACHIEVEMENTS</span>
-        <span class="cat-cn">成就 · 收集里程碑</span>
+      <div class="codex-scroll">
+        <div class="codex-body"></div>
+        <div class="codex-achv-title">
+          <span class="cat-tag">ACHIEVEMENTS</span>
+          <span class="cat-cn">成就 · 收集里程碑</span>
+        </div>
+        <div class="codex-milestones"></div>
       </div>
-      <div class="codex-milestones"></div>
       <button class="btn btn-3" id="btn-back">← 返回</button>
       <div class="hint">局内首次遭遇即录入图鉴 · 未发掘条目以黑色轮廓显示 · 达成里程碑可领取奖励</div>
     `, "codex-screen");
@@ -6336,6 +7010,130 @@ class Screens {
         listEl.appendChild(div);
       });
     });
+  }
+
+  /**
+   * 反馈留言板: 玩家与开发者的异步对话.
+   * ctx = { ownerId, name, isLocal }. loadFn() -> Promise<{ok, messages}>. sendFn(text) -> Promise<{ok, message}>.
+   * onBack 返回主菜单.
+   *
+   * 交互特点:
+   *  - 打开时拉取历史消息, 时间线自下而上追加渲染;
+   *  - 玩家消息靠右(品红), 开发者回复靠左(青);
+   *  - 底部输入框 + 发送按钮, 发送后本地即时追加(乐观 UI), 服务端失败时提示并保留输入;
+   *  - 输入长度硬上限 500(与后端一致); 空/超长按钮禁用.
+   */
+  showFeedback({ ownerId, name, isLocal }, { loadFn, sendFn, onBack }) {
+    this.clear();
+    const identityHint = isLocal
+      ? `匿名玩家（本地 id: ${esc(ownerId.replace(/^local:/, ""))}）· 开通云同步后回复更可靠`
+      : `云账号 · 昵称 ${esc(name || "指挥官")}`;
+    const el = this._make(`
+      <div class="sub">FEEDBACK · 反馈留言板</div>
+      <h2 class="neon-title">💬 反馈</h2>
+      <div class="fb-identity">${identityHint}</div>
+      <div class="fb-thread" id="fb-thread"><div class="fb-loading">加载中…</div></div>
+      <div class="fb-compose">
+        <textarea id="fb-input" maxlength="500" rows="2" placeholder="写下你遇到的问题或建议…(最多 500 字)"></textarea>
+        <div class="fb-compose-row">
+          <span class="fb-count" id="fb-count">0 / 500</span>
+          <button class="btn btn-primary fb-send" id="fb-send" disabled>发送</button>
+        </div>
+      </div>
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+      <div class="hint">欢迎在这里提出你遇到的bug/优化建议，光速响应</div>
+    `, "feedback-screen");
+    this.root.appendChild(el);
+
+    const thread = el.querySelector("#fb-thread");
+    const input = el.querySelector("#fb-input");
+    const sendBtn = el.querySelector("#fb-send");
+    const countEl = el.querySelector("#fb-count");
+
+    const fmtTime = (t) => {
+      if (!t) return "";
+      const d = new Date(Number(t));
+      const p = (n) => String(n).padStart(2, "0");
+      return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    const renderMessages = (msgs) => {
+      if (!msgs.length) {
+        thread.innerHTML = `<div class="fb-empty">还没有消息 · 说说你遇到的 Bug 或想要的功能吧！</div>`;
+        return;
+      }
+      thread.innerHTML = "";
+      for (const m of msgs) {
+        const isDev = m.role === "dev";
+        const row = document.createElement("div");
+        row.className = `fb-msg ${isDev ? "fb-msg-dev" : "fb-msg-user"}`;
+        row.innerHTML = `
+          <div class="fb-msg-meta">
+            <span class="fb-msg-who">${isDev ? "开发者" : esc(m.name || "指挥官")}</span>
+            <span class="fb-msg-time">${fmtTime(m.created_at)}</span>
+          </div>
+          <div class="fb-msg-body">${esc(m.body || "")}</div>
+        `;
+        thread.appendChild(row);
+      }
+      // 自动滚到最新
+      thread.scrollTop = thread.scrollHeight;
+    };
+
+    const refreshSendState = () => {
+      const len = input.value.trim().length;
+      countEl.textContent = `${input.value.length} / 500`;
+      sendBtn.disabled = len === 0 || len > 500 || sendBtn.dataset.sending === "1";
+    };
+    input.addEventListener("input", refreshSendState);
+    refreshSendState();
+
+    // 初次拉取
+    loadFn().then((res) => {
+      if (!res || !res.ok) {
+        thread.innerHTML = `<div class="fb-empty">加载失败, 请稍后重试</div>`;
+        return;
+      }
+      renderMessages(Array.isArray(res.messages) ? res.messages : []);
+    });
+
+    sendBtn.addEventListener("click", async () => {
+      const text = input.value.trim();
+      if (!text || text.length > 500) return;
+      sendBtn.dataset.sending = "1";
+      refreshSendState();
+      const res = await sendFn(text);
+      sendBtn.dataset.sending = "";
+      if (!res || !res.ok) {
+        // 保留输入, 顶部弹出错误行
+        const err = document.createElement("div");
+        err.className = "fb-error";
+        err.textContent = res && res.error ? res.error : "发送失败, 请检查网络";
+        thread.appendChild(err);
+        thread.scrollTop = thread.scrollHeight;
+        refreshSendState();
+        return;
+      }
+      // 乐观追加
+      input.value = "";
+      refreshSendState();
+      const m = res.message || { role: "user", name, body: text, created_at: Date.now() };
+      const row = document.createElement("div");
+      row.className = "fb-msg fb-msg-user";
+      row.innerHTML = `
+        <div class="fb-msg-meta">
+          <span class="fb-msg-who">${esc(m.name || name || "指挥官")}</span>
+          <span class="fb-msg-time">${fmtTime(m.created_at)}</span>
+        </div>
+        <div class="fb-msg-body">${esc(m.body || "")}</div>
+      `;
+      // 若之前是"empty"占位, 先清掉
+      const empty = thread.querySelector(".fb-empty");
+      if (empty) empty.remove();
+      thread.appendChild(row);
+      thread.scrollTop = thread.scrollHeight;
+    });
+
+    el.querySelector("#btn-back").addEventListener("click", onBack);
   }
 }
 

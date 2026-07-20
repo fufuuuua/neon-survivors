@@ -864,6 +864,14 @@ html, body {
 .user-bar .user-name { color: #fff; font-weight: 700; letter-spacing: 0.06em; }
 .user-bar .user-id { color: var(--neon-cyan); }
 .user-bar .user-switch { color: #6f86a8; font-size: 11px; letter-spacing: 0.14em; }
+/* 已登录云账号: 保持青色云图标观感 */
+.user-bar-linked { border-color: rgba(0, 240, 255, 0.35); }
+.user-bar-linked .user-ic { color: var(--neon-cyan); }
+/* 未登录: 灰色提示态, 点击引导玩家去云同步注册 */
+.user-bar-guest { border-color: rgba(143, 169, 200, 0.35); background: rgba(143, 169, 200, 0.06); }
+.user-bar-guest .user-name { color: #8fa9c8; font-weight: 600; }
+.user-bar-guest .user-switch { color: var(--neon-magenta); }
+.user-bar-guest:hover { border-color: rgba(255, 43, 214, 0.55); box-shadow: 0 0 20px rgba(255, 43, 214, 0.35); }
 
 /* ---------- 玩家管理界面 ---------- */
 .user-list {
@@ -1439,4 +1447,129 @@ html, body {
   .lvl-name { font-size: 12.5px; }
   .chapter { padding: 14px 12px; }
   .res-stars { font-size: 46px; }
+}
+
+/* ---------- 反馈留言板 ----------
+ * 主页右上角 FAB(悬浮按钮), 与 user-bar 分居两侧不冲突.
+ * 反馈页布局: 顶固定(标题 + 身份) + 中间时间线滚动 + 底部输入区固定 + 返回按钮固定.
+ */
+.feedback-fab {
+  position: absolute;
+  top: 16px;
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 43, 214, 0.5);
+  background: rgba(255, 43, 214, 0.08);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.14s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.feedback-fab:hover {
+  background: rgba(255, 43, 214, 0.22);
+  box-shadow: 0 0 20px rgba(255, 43, 214, 0.55);
+  transform: translateY(-1px);
+}
+
+.screen.feedback-screen {
+  justify-content: flex-start;
+  padding: 24px 20px 18px;
+  gap: 10px;
+  overflow: hidden;
+}
+.fb-identity { font-family: var(--mono); font-size: 12px; color: #8fa9c8; letter-spacing: 0.08em; }
+.fb-thread {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 640px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 10px;
+  border: 1px solid rgba(143, 169, 200, 0.18);
+  border-radius: 10px;
+  background: rgba(10, 14, 30, 0.4);
+}
+.fb-loading, .fb-empty { text-align: center; color: #7d93b4; font-size: 13px; padding: 24px 8px; }
+.fb-error { color: #ff6b7d; font-size: 12px; text-align: center; padding: 4px 8px; border: 1px dashed rgba(255, 107, 125, 0.35); border-radius: 6px; }
+
+/* 消息气泡 */
+.fb-msg {
+  max-width: 78%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+.fb-msg-meta { display: flex; gap: 10px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em; opacity: 0.8; margin-bottom: 3px; }
+.fb-msg-who { font-weight: 800; }
+.fb-msg-body { white-space: pre-wrap; word-break: break-word; }
+
+.fb-msg-user {
+  align-self: flex-end;
+  background: linear-gradient(180deg, rgba(255, 43, 214, 0.18), rgba(255, 43, 214, 0.08));
+  border-color: rgba(255, 43, 214, 0.35);
+  color: #ffeafa;
+}
+.fb-msg-user .fb-msg-who { color: #ff2bd6; }
+
+.fb-msg-dev {
+  align-self: flex-start;
+  background: linear-gradient(180deg, rgba(0, 240, 255, 0.14), rgba(0, 240, 255, 0.06));
+  border-color: rgba(0, 240, 255, 0.4);
+  color: #e6faff;
+}
+.fb-msg-dev .fb-msg-who { color: #00f0ff; }
+
+/* 输入区: 底部固定, 与主发送按钮一体化.
+ * 宽度用 100% + max-width 而非 96vw ——96vw 相对视口, 会超出 screen 内容区(screen 有 padding: 24 20 18);
+ * 100% 相对父可用宽, 与 screen 内边距天然对齐, 计数条 "0/500" 不会飞到 padding 之外. */
+.fb-compose {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fb-compose textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: #e8f6ff;
+  background: rgba(10, 14, 30, 0.6);
+  border: 1px solid rgba(143, 169, 200, 0.28);
+  border-radius: 8px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.fb-compose textarea:focus {
+  border-color: rgba(255, 43, 214, 0.6);
+  box-shadow: 0 0 16px rgba(255, 43, 214, 0.25);
+}
+.fb-compose-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.fb-count { font-family: var(--mono); font-size: 11px; color: #7d93b4; letter-spacing: 0.08em; }
+.btn.fb-send { width: auto; padding: 7px 22px; font-size: 14px; }
+.btn.fb-send:disabled { opacity: 0.42; cursor: not-allowed; box-shadow: none; }
+
+.screen.feedback-screen > #btn-back { margin-top: 4px; }
+
+/* 反馈页移动端: 缩小气泡与输入区 padding, 让键盘弹出时时间线仍有可视高度 */
+@media (max-width: 720px) {
+  .feedback-fab { width: 36px; height: 36px; font-size: 18px; top: 12px; right: 10px; }
+  .fb-thread { padding: 8px 6px; }
+  .fb-msg { max-width: 86%; font-size: 13px; padding: 7px 10px; }
+  .btn.fb-send { padding: 7px 16px; font-size: 13px; }
 }

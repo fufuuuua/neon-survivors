@@ -130,6 +130,34 @@ export const CloudSync = {
     return { ok: true, list: Array.isArray(r.data?.list) ? r.data.list : [] };
   },
 
+  /**
+   * 拉取反馈留言板的对话时间线.
+   * ownerId 由调用方决定: 云账号用 cred.cloudId; 匿名玩家用 "local:<localUserId>".
+   * 返回 { ok, messages }, messages: [{ role:"user"|"dev", name, body, created_at }].
+   */
+  async listFeedback(ownerId) {
+    const r = await req(`/feedback?ownerId=${encodeURIComponent(ownerId)}`, { method: "GET" });
+    if (!r.ok) return { ok: false, error: "留言加载失败", messages: [] };
+    return { ok: true, messages: Array.isArray(r.data?.messages) ? r.data.messages : [] };
+  },
+
+  /**
+   * 发送一条反馈. 云账号会自动附带 token 二次校验(防止冒名);
+   * 匿名 local:xxx 只依赖服务端限流保护.
+   */
+  async sendFeedback({ ownerId, name, body }) {
+    const c = loadCred();
+    const useToken = c && ownerId === c.cloudId ? c.token : null;
+    const r = await req("/feedback", { method: "POST", token: useToken, body: { ownerId, name, body } });
+    if (!r.ok) {
+      const errMsg = r.status === 429 ? "发送太频繁, 稍后再试"
+        : r.status === 401 ? "未授权"
+        : "发送失败";
+      return { ok: false, error: errMsg };
+    }
+    return { ok: true, message: r.data?.message || null };
+  },
+
   /** 解绑(仅清除本地凭证, 不删除云端数据) */
   unlink() { clearCred(); },
 };

@@ -339,18 +339,44 @@ export class Game {
   _showMenu() {
     this.state = GameState.MENU;
     this._showPauseBtn(false);
-    const hasRun = !!SaveData.loadRun(this.user.id); // 存在有效续玩快照时展示「继续上局」
-    this.screens.showMenu(this.save, this.user, {
+    const hasRun = !!SaveData.loadRun(this.user.id);
+    // 顶部 user-bar 显示的身份来源统一到「云同步凭证」: 有云账号显示云端昵称并标 isLoggedIn=true;
+    // 未登录时展示提示条, 点击跳云同步页. 本地 Account 仍存在(用于存档分区), 但不再作为身份展示.
+    const cred = CloudSync.cred();
+    const userInfo = cred && cred.cloudId
+      ? { id: this.user.id, name: cred.name || this.user.name, isLoggedIn: true }
+      : { id: this.user.id, name: "未登录", isLoggedIn: false };
+    this.screens.showMenu(this.save, userInfo, {
       onStart: () => this.start(),
       onResume: hasRun ? () => this._resumeRun() : null,
       onCampaign: () => this._openCampaign(),
       onShop: () => this._openShop(),
       onHangar: () => this._openHangar(),
       onCodex: () => this._openCodex(),
-      onAccount: () => this._openAccount(),
       onCloud: () => this._openCloud(),
       onLeaderboard: () => this._openLeaderboard(),
+      onFeedback: () => this._openFeedback(),
     });
+  }
+
+  /** 打开反馈留言板: 玩家与开发者的异步对话.
+   *  ownerId 优先取云账号 cloud_id(需鉴权保护); 未绑定则用 "local:<localUserId>" 作匿名 id. */
+  _openFeedback() {
+    this.audio.init();
+    this.state = GameState.FEEDBACK;
+    this._showPauseBtn(false);
+    const cred = CloudSync.cred();
+    const isLocal = !cred || !cred.cloudId;
+    const ownerId = !isLocal ? cred.cloudId : `local:${this.user.id}`;
+    const name = (cred && cred.name) || this.user.name || "指挥官";
+    this.screens.showFeedback(
+      { ownerId, name, isLocal },
+      {
+        loadFn: () => CloudSync.listFeedback(ownerId),
+        sendFn: (body) => CloudSync.sendFeedback({ ownerId, name, body }),
+        onBack: () => this._showMenu(),
+      },
+    );
   }
 
   /** 打开图鉴（收集情报 + 里程碑奖励） */
@@ -416,6 +442,9 @@ export class Game {
     if (res.result === "clear") {
       improved = Campaign.record(this.save, level.id, res.stars);
       SaveData.save(this.user.id, this.save);
+      // 云同步: 已绑定则后台上传存档(闯关星星记录进 save.campaign, 云端保持最新).
+      // fire-and-forget: 失败静默, 不阻塞结算演出.
+      if (CloudSync.isLinked()) CloudSync.pushSave(this.save);
     }
 
     this.state = GameState.CAMPAIGN; // 结算界面复用选关状态
@@ -501,43 +530,12 @@ export class Game {
   }
 
   /**
-   * 打开玩家管理界面：切换 / 创建 / 重命名 / 删除。
-   * 切换或删除当前用户后会重载存档并回到主菜单。
+   * 【已弃用】本地多账号管理面板. 一台设备只保留一个玩家(本地 userId 固定=Account.init 的 001),
+   * 顶部 user-bar 直接跳云同步页. 保留 _reloadForUser 以支持云同步"绑定 → 拉取云存档 → 重载"的场景.
    */
-  _openAccount() {
-    this.audio.init();
-    this.state = GameState.MENU; // 复用 MENU 状态即可, 不需要单独的 state
-    this._showPauseBtn(false);
-    const render = () => {
-      this.screens.showAccount(this.user.id, {
-        onSwitch: (id) => {
-          if (Account.switchTo(id)) {
-            this._reloadForUser(id);
-          }
-        },
-        onCreate: ({ name }) => {
-          const res = Account.create({ name });
-          if (!res.ok) return res.error;
-          this._reloadForUser(res.user.id);
-          return null;
-        },
-        onRename: (id, name) => {
-          const err = Account.rename(id, name);
-          if (!err && id === this.user.id) this.user = Account.current();
-          if (!err) render(); // 刷新界面显示新昵称
-          return err;
-        },
-        onDelete: (id) => {
-          const nextId = Account.remove(id);
-          this._reloadForUser(nextId);
-        },
-        onBack: () => this._showMenu(),
-      });
-    };
-    render();
-  }
 
-  /** 切换到指定用户: 重载 save/run, 场上实体清空, 返回菜单 */
+  /** 切换到指定用户: 重载 save/run, 场上实体清空, 返回菜单.
+   *  当前只在云同步拉取存档后被调用(userId 不变, 但存档内容替换). */
   _reloadForUser(userId) {
     // 若在游戏中切换用户, 先落盘并清理场上状态
     this._enemyPool.clear();

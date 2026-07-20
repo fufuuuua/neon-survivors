@@ -8,7 +8,6 @@ import { MetaProgression } from "../systems/MetaProgression.js";
 import { Skins, RARITY, MAX_STAR } from "../systems/Skins.js";
 import { Codex } from "../systems/Codex.js";
 import { Campaign } from "../systems/Campaign.js";
-import { Account } from "../core/Account.js";
 
 /** HTML 转义：防止用户输入的昵称 / ID 破坏 DOM 结构或注入脚本 */
 function esc(str) {
@@ -54,15 +53,18 @@ export class Screens {
   }
 
   /** 主菜单 */
-  showMenu(save, user, { onStart, onResume, onCampaign, onShop, onHangar, onCodex, onAccount, onCloud, onLeaderboard }) {
+  showMenu(save, user, { onStart, onResume, onCampaign, onShop, onHangar, onCodex, onCloud, onLeaderboard, onFeedback }) {
     this.clear();
     const b = save.best;
+    // user 现在直接携带云端登录信息(由 Game 组装): { name, isLoggedIn }.
+    // 已登录云账号时显示昵称 + "☁ 云同步 ▸"; 未登录时提示玩家去云同步注册, 点击都跳云同步页.
+    const isLogged = !!(user && user.isLoggedIn);
     const userBar = user
       ? `
-      <div class="user-bar" id="user-bar" title="点击切换或管理玩家">
-        <span class="user-ic">👤</span>
-        <span class="user-name">${esc(user.name)}</span>
-        <span class="user-switch">切换 ▸</span>
+      <div class="user-bar user-bar-${isLogged ? "linked" : "guest"}" id="user-bar" title="${isLogged ? "查看云同步 / 切换账号" : "点击注册云账号"}">
+        <span class="user-ic">${isLogged ? "☁" : "👤"}</span>
+        <span class="user-name">${esc(user.name || "未登录")}</span>
+        <span class="user-switch">${isLogged ? "云同步 ▸" : "去登录 ▸"}</span>
       </div>`
       : "";
     // 主行按钮:
@@ -87,6 +89,7 @@ export class Screens {
       `;
     const el = this._make(`
       ${userBar}
+      <button class="feedback-fab" id="btn-feedback" title="反馈 / 留言">💬</button>
       <div class="sub">ROGUELITE · SURVIVOR · 霓虹幸存者</div>
       <h1 class="neon-title">NEON DRIFT</h1>
       <div class="cores-balance">
@@ -108,7 +111,6 @@ export class Screens {
       </div>
       <div class="menu-btns menu-cloud">
         <button class="btn btn-rank" id="btn-rank">🏆 排行榜</button>
-        <button class="btn btn-sync" id="btn-cloud">☁ 云同步</button>
       </div>
       <div class="hint">${this.isTouch
         ? "拖动屏幕移动 · 点击右上角按钮暂停<br>武器自动开火"
@@ -121,11 +123,12 @@ export class Screens {
     if (onCodex) el.querySelector("#btn-codex").addEventListener("click", onCodex);
     if (onCampaign) el.querySelector("#btn-campaign").addEventListener("click", onCampaign);
     if (onResume) el.querySelector("#btn-resume").addEventListener("click", onResume);
-    if (onCloud) el.querySelector("#btn-cloud").addEventListener("click", onCloud);
     if (onLeaderboard) el.querySelector("#btn-rank").addEventListener("click", onLeaderboard);
-    if (onAccount) {
+    if (onFeedback) el.querySelector("#btn-feedback").addEventListener("click", onFeedback);
+    // 顶部 user-bar 点击直接进云同步页(注册/登录/查看). 本地多账号入口已弃用: 一台设备只有一个玩家.
+    if (onCloud) {
       const bar = el.querySelector("#user-bar");
-      if (bar) bar.addEventListener("click", onAccount);
+      if (bar) bar.addEventListener("click", onCloud);
     }
   }
 
@@ -703,92 +706,6 @@ export class Screens {
     el.querySelector("#btn-back").addEventListener("click", onBack);
   }
 
-  // ---------------- 账号管理 ----------------
-
-  /**
-   * 用户管理界面：切换 / 创建 / 重命名 / 删除。
-   * 所有变更通过回调回传给上层（Game）落盘。
-   */
-  showAccount(currentId, { onSwitch, onCreate, onRename, onDelete, onBack }) {
-    this.clear();
-    const el = this._make(`
-      <div class="sub">PILOT REGISTRY · 玩家档案</div>
-      <h2 class="neon-title">选择玩家</h2>
-      <div class="hint">同一浏览器可保存多份进度; ID 由系统自动分配, 也是云端存档 / 排行榜的账号标识</div>
-
-      <div class="user-list"></div>
-
-      <div class="user-create">
-        <div class="uc-title">＋ 创建新玩家</div>
-        <div class="uc-row">
-          <label>昵称</label>
-          <input id="in-name" maxlength="${Account.NAME_MAX}" placeholder="例如：星穹指挥官" autocomplete="off" />
-        </div>
-        <div class="uc-error" id="uc-error"></div>
-        <button class="btn" id="btn-create">✦ 创建并使用</button>
-      </div>
-
-      <button class="btn btn-3" id="btn-back">← 返回</button>
-    `, "account-screen");
-
-    const list = el.querySelector(".user-list");
-    const users = Account.list();
-    if (users.length === 0) {
-      list.innerHTML = `<div class="hint">尚无玩家档案</div>`;
-    } else {
-      for (const u of users) {
-        const isCur = u.id === currentId;
-        const row = document.createElement("div");
-        row.className = `user-row${isCur ? " current" : ""}`;
-        row.innerHTML = `
-          <div class="ur-info">
-            <div class="ur-name">${esc(u.name)}${isCur ? ' <span class="ur-tag">当前</span>' : ""}</div>
-            <div class="ur-id">#${esc(u.id)}</div>
-          </div>
-          <div class="ur-actions">
-            ${isCur ? "" : `<button class="ur-btn ur-use">使用</button>`}
-            <button class="ur-btn ur-rename">重命名</button>
-            <button class="ur-btn ur-del">删除</button>
-          </div>
-        `;
-        const useBtn = row.querySelector(".ur-use");
-        if (useBtn) useBtn.addEventListener("click", () => onSwitch(u.id));
-
-        row.querySelector(".ur-rename").addEventListener("click", () => {
-          // 使用 prompt 保持零依赖；输入会经过 Account.rename 内部清洗
-          const next = window.prompt("新昵称", u.name);
-          if (next != null) {
-            const err = onRename(u.id, next);
-            if (err) window.alert(err);
-          }
-        });
-        row.querySelector(".ur-del").addEventListener("click", () => {
-          // 二次确认，避免误删除
-          if (window.confirm(`确定删除玩家「${u.name}」? 该玩家的存档、进度、外观都会被清除, 无法恢复。`)) {
-            onDelete(u.id);
-          }
-        });
-        list.appendChild(row);
-      }
-    }
-
-    const nameIn = el.querySelector("#in-name");
-    const errBox = el.querySelector("#uc-error");
-    const showErr = (msg) => { errBox.textContent = msg || ""; };
-    el.querySelector("#btn-create").addEventListener("click", () => {
-      showErr("");
-      const err = onCreate({ name: nameIn.value });
-      if (err) showErr(err);
-    });
-    // 回车触发创建, 提升键盘用户体验
-    nameIn.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); el.querySelector("#btn-create").click(); }
-    });
-
-    el.querySelector("#btn-back").addEventListener("click", onBack);
-    this.root.appendChild(el);
-  }
-
   // ---------------- 云同步 ----------------
 
   /**
@@ -979,5 +896,129 @@ export class Screens {
         listEl.appendChild(div);
       });
     });
+  }
+
+  /**
+   * 反馈留言板: 玩家与开发者的异步对话.
+   * ctx = { ownerId, name, isLocal }. loadFn() -> Promise<{ok, messages}>. sendFn(text) -> Promise<{ok, message}>.
+   * onBack 返回主菜单.
+   *
+   * 交互特点:
+   *  - 打开时拉取历史消息, 时间线自下而上追加渲染;
+   *  - 玩家消息靠右(品红), 开发者回复靠左(青);
+   *  - 底部输入框 + 发送按钮, 发送后本地即时追加(乐观 UI), 服务端失败时提示并保留输入;
+   *  - 输入长度硬上限 500(与后端一致); 空/超长按钮禁用.
+   */
+  showFeedback({ ownerId, name, isLocal }, { loadFn, sendFn, onBack }) {
+    this.clear();
+    const identityHint = isLocal
+      ? `匿名玩家（本地 id: ${esc(ownerId.replace(/^local:/, ""))}）· 开通云同步后回复更可靠`
+      : `云账号 · 昵称 ${esc(name || "指挥官")}`;
+    const el = this._make(`
+      <div class="sub">FEEDBACK · 反馈留言板</div>
+      <h2 class="neon-title">💬 bug留言区</h2>
+      <div class="fb-identity">${identityHint}</div>
+      <div class="fb-thread" id="fb-thread"><div class="fb-loading">加载中…</div></div>
+      <div class="fb-compose">
+        <textarea id="fb-input" maxlength="500" rows="2" placeholder="写下你遇到的bug或建议…(最多 500 字)"></textarea>
+        <div class="fb-compose-row">
+          <span class="fb-count" id="fb-count">0 / 500</span>
+          <button class="btn btn-primary fb-send" id="fb-send" disabled>发送</button>
+        </div>
+      </div>
+      <button class="btn btn-3" id="btn-back">← 返回</button>
+      <div class="hint">欢迎在这里提出你遇到的bug/优化建议，光速响应</div>
+    `, "feedback-screen");
+    this.root.appendChild(el);
+
+    const thread = el.querySelector("#fb-thread");
+    const input = el.querySelector("#fb-input");
+    const sendBtn = el.querySelector("#fb-send");
+    const countEl = el.querySelector("#fb-count");
+
+    const fmtTime = (t) => {
+      if (!t) return "";
+      const d = new Date(Number(t));
+      const p = (n) => String(n).padStart(2, "0");
+      return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    const renderMessages = (msgs) => {
+      if (!msgs.length) {
+        thread.innerHTML = `<div class="fb-empty">还没有消息 · 说说你遇到的 Bug 或想要的功能吧！</div>`;
+        return;
+      }
+      thread.innerHTML = "";
+      for (const m of msgs) {
+        const isDev = m.role === "dev";
+        const row = document.createElement("div");
+        row.className = `fb-msg ${isDev ? "fb-msg-dev" : "fb-msg-user"}`;
+        row.innerHTML = `
+          <div class="fb-msg-meta">
+            <span class="fb-msg-who">${isDev ? "开发者" : esc(m.name || "指挥官")}</span>
+            <span class="fb-msg-time">${fmtTime(m.created_at)}</span>
+          </div>
+          <div class="fb-msg-body">${esc(m.body || "")}</div>
+        `;
+        thread.appendChild(row);
+      }
+      // 自动滚到最新
+      thread.scrollTop = thread.scrollHeight;
+    };
+
+    const refreshSendState = () => {
+      const len = input.value.trim().length;
+      countEl.textContent = `${input.value.length} / 500`;
+      sendBtn.disabled = len === 0 || len > 500 || sendBtn.dataset.sending === "1";
+    };
+    input.addEventListener("input", refreshSendState);
+    refreshSendState();
+
+    // 初次拉取
+    loadFn().then((res) => {
+      if (!res || !res.ok) {
+        thread.innerHTML = `<div class="fb-empty">加载失败, 请稍后重试</div>`;
+        return;
+      }
+      renderMessages(Array.isArray(res.messages) ? res.messages : []);
+    });
+
+    sendBtn.addEventListener("click", async () => {
+      const text = input.value.trim();
+      if (!text || text.length > 500) return;
+      sendBtn.dataset.sending = "1";
+      refreshSendState();
+      const res = await sendFn(text);
+      sendBtn.dataset.sending = "";
+      if (!res || !res.ok) {
+        // 保留输入, 顶部弹出错误行
+        const err = document.createElement("div");
+        err.className = "fb-error";
+        err.textContent = res && res.error ? res.error : "发送失败, 请检查网络";
+        thread.appendChild(err);
+        thread.scrollTop = thread.scrollHeight;
+        refreshSendState();
+        return;
+      }
+      // 乐观追加
+      input.value = "";
+      refreshSendState();
+      const m = res.message || { role: "user", name, body: text, created_at: Date.now() };
+      const row = document.createElement("div");
+      row.className = "fb-msg fb-msg-user";
+      row.innerHTML = `
+        <div class="fb-msg-meta">
+          <span class="fb-msg-who">${esc(m.name || name || "指挥官")}</span>
+          <span class="fb-msg-time">${fmtTime(m.created_at)}</span>
+        </div>
+        <div class="fb-msg-body">${esc(m.body || "")}</div>
+      `;
+      // 若之前是"empty"占位, 先清掉
+      const empty = thread.querySelector(".fb-empty");
+      if (empty) empty.remove();
+      thread.appendChild(row);
+      thread.scrollTop = thread.scrollHeight;
+    });
+
+    el.querySelector("#btn-back").addEventListener("click", onBack);
   }
 }
