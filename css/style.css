@@ -863,14 +863,15 @@ html, body {
 .user-bar .user-ic { font-size: 14px; }
 .user-bar .user-name { color: #fff; font-weight: 700; letter-spacing: 0.06em; }
 .user-bar .user-id { color: var(--neon-cyan); }
-.user-bar .user-switch { color: #6f86a8; font-size: 11px; letter-spacing: 0.14em; }
+/* user-switch 与 user-name 保持同一字号, 否则 inline-flex 中不同字号的行盒会造成视觉基线偏移 */
+.user-bar .user-switch { color: #6f86a8; letter-spacing: 0.14em; }
 /* 已登录云账号: 保持青色云图标观感 */
 .user-bar-linked { border-color: rgba(0, 240, 255, 0.35); }
 .user-bar-linked .user-ic { color: var(--neon-cyan); }
-/* 未登录: 灰色提示态, 点击引导玩家去云同步注册 */
+/* 未登录: 灰色提示态, 点击引导玩家去云同步注册. "去登录 ▸"用白色, 与"未登录"同色以避免视觉高度错觉 */
 .user-bar-guest { border-color: rgba(143, 169, 200, 0.35); background: rgba(143, 169, 200, 0.06); }
 .user-bar-guest .user-name { color: #8fa9c8; font-weight: 600; }
-.user-bar-guest .user-switch { color: var(--neon-magenta); }
+.user-bar-guest .user-switch { color: #fff; }
 .user-bar-guest:hover { border-color: rgba(255, 43, 214, 0.55); box-shadow: 0 0 20px rgba(255, 43, 214, 0.35); }
 
 /* ---------- 玩家管理界面 ---------- */
