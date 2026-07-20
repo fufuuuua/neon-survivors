@@ -11,65 +11,67 @@
  *  - applyTo() 在开局把已购加成注入玩家初始属性 / 能力。
  */
 
+// 花费曲线设计: 单局产出约 100~300 核心(依赖表现), 全部买满合计需 ~9000+ 核心,
+// 即使高效玩家也需 40+ 局才能满级, 保证长期养成空间. baseCost 打底 + costGrow 陡增双重门槛.
 const META = [
   {
     id: "hp", icon: "♥", name: "强化装甲", accent: "#ff5c8a", max: 8,
-    baseCost: 10, costGrow: 1.55,
+    baseCost: 20, costGrow: 1.7,
     effect: "起始最大生命 +18 / 级",
   },
   {
     id: "dmg", icon: "⚡", name: "武器校准", accent: "#ffd23f", max: 8,
-    baseCost: 14, costGrow: 1.55,
+    baseCost: 28, costGrow: 1.7,
     effect: "全武器伤害 +7% / 级",
   },
   {
     id: "spd", icon: "➤", name: "引擎调校", accent: "#00f0ff", max: 6,
-    baseCost: 10, costGrow: 1.5,
+    baseCost: 20, costGrow: 1.65,
     effect: "移动速度 +4% / 级",
   },
   {
     id: "regen", icon: "✚", name: "纳米基质", accent: "#aaff00", max: 6,
-    baseCost: 12, costGrow: 1.5,
+    baseCost: 24, costGrow: 1.65,
     effect: "每秒回复 +0.4 / 级",
   },
   {
     id: "magnet", icon: "⬇", name: "引力核心", accent: "#8a5bff", max: 5,
-    baseCost: 8, costGrow: 1.5,
+    baseCost: 16, costGrow: 1.6,
     effect: "经验拾取范围 +15% / 级",
   },
   {
     id: "crit", icon: "✧", name: "暴击矩阵", accent: "#ff8a3d", max: 6,
-    baseCost: 15, costGrow: 1.55,
+    baseCost: 30, costGrow: 1.7,
     effect: "暴击率 +5% / 级（暴击造成 2 倍伤害）",
   },
   {
     id: "haste", icon: "⟳", name: "时序压缩", accent: "#00f0ff", max: 5,
-    baseCost: 16, costGrow: 1.6,
+    baseCost: 32, costGrow: 1.75,
     effect: "武器攻速 +4% / 级",
   },
   {
     id: "armor", icon: "◈", name: "相位护盾", accent: "#5cffd2", max: 5,
-    baseCost: 18, costGrow: 1.6,
+    baseCost: 36, costGrow: 1.75,
     effect: "受到伤害 -6% / 级",
   },
   {
     id: "xp", icon: "◇", name: "学习协议", accent: "#8a5bff", max: 5,
-    baseCost: 14, costGrow: 1.5,
+    baseCost: 28, costGrow: 1.65,
     effect: "经验获取 +8% / 级",
   },
   {
     id: "preload", icon: "★", name: "战术预载", accent: "#ffd23f", max: 3,
-    baseCost: 30, costGrow: 1.9,
+    baseCost: 60, costGrow: 2.1,
     effect: "开局额外获得 1 次强化选择 / 级",
   },
   {
     id: "revive", icon: "☯", name: "应急重构", accent: "#aaff00", max: 2,
-    baseCost: 60, costGrow: 2.2,
+    baseCost: 120, costGrow: 2.5,
     effect: "每局阵亡后原地复活一次 / 级",
   },
   {
     id: "greed", icon: "◆", name: "贪婪协议", accent: "#ff2bd6", max: 6,
-    baseCost: 20, costGrow: 1.6,
+    baseCost: 40, costGrow: 1.75,
     effect: "局末获得核心 +10% / 级",
   },
 ];

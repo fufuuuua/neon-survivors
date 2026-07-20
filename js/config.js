@@ -82,10 +82,10 @@ export const CONFIG = Object.freeze({
   bossOrder: ["boss_nucleus", "boss_flux", "boss_void"],
 
   spawn: {
-    interval: 1.15,      // 初始生成间隔（秒）
-    minInterval: 0.28,
+    interval: 1.35,      // 初始生成间隔（秒, 略调高从 1.15, 前期喘息更充裕）
+    minInterval: 0.36,   // 生成间隔下限（从 0.28 上调, 后期难度峰值稍缓）
     batch: 2,            // 每次生成数量
-    rampEvery: 18,       // 每多少秒提升难度
+    rampEvery: 22,       // 每多少秒提升难度（从 18 上调, 难度爬升更缓）
     bossEvery: 120,      // 每多少秒出现 Boss
     spawnPad: 80,        // 屏幕外生成边距
   },
