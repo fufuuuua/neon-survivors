@@ -787,11 +787,22 @@ html, body {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
-  /* 首页内容较短，移动端保持垂直居中；若内容超高则自动从顶部滚动 */
+  /* 主菜单: 单页整屏显示 —— 顶部预留 44px 给悬浮 user-bar, 底部收紧, 内容整体压缩以塞进 8+ 个按钮.
+     若极小屏(如 iPhone SE 竖屏)仍装不下, .screen 的 overflow-y: auto 兜底提供滚动. */
   .screen.menu-screen {
     justify-content: center;
-    padding: 24px 12px;
+    padding: 44px 12px 14px;
+    gap: 10px;
   }
+  /* 首屏标题/信息压缩, 保持视觉层级但更紧凑, 不与 user-bar 顶到一起 */
+  .screen.menu-screen h1 { font-size: clamp(30px, 10.5vw, 52px); margin: 0; }
+  .screen.menu-screen .sub { font-size: 11px; letter-spacing: 0.16em; }
+  .screen.menu-screen .cores-balance { font-size: 18px; }
+  .screen.menu-screen .best-row { font-size: 11px; gap: 6px 12px; }
+  .screen.menu-screen .menu-btns { gap: 8px; }
+  .screen.menu-screen .btn { padding: 10px 22px; font-size: 15px; width: min(88vw, 340px); }
+  /* 主菜单 hint 与 user-bar 冗余(触摸操作全靠按钮), 隐藏以省纵向空间 */
+  .screen.menu-screen .hint { display: none; }
   /* 暂停界面：移动端垂直居中 */
   .screen.pause-screen {
     justify-content: center;
@@ -799,6 +810,11 @@ html, body {
   }
   /* 结算界面(GAME OVER): 移动端居中显示, 数据行数固定不需要滚动, 与主菜单同风格 */
   .screen.gameover-screen {
+    justify-content: center;
+    padding: 24px 12px;
+  }
+  /* 强化实验室: 内容项目 12 条, shop-list 自身有 max-height:58vh + overflow, 整体可以居中而不溢出 */
+  .screen.shop-screen {
     justify-content: center;
     padding: 24px 12px;
   }
