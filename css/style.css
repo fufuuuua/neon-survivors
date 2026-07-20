@@ -456,17 +456,157 @@ html, body {
 .shard-amt { color: var(--neon-lime); text-shadow: 0 0 12px var(--neon-lime); }
 
 /* ---------- 机库：抽卡按钮栏 ---------- */
-.gacha-bar { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
-.gacha-btn { font-size: 16px; padding: 12px 30px; }
+.gacha-bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+/* 抽卡按钮: 桌面/移动端都比普通 btn 更紧凑(辅助操作定位), 让主视觉重心留给下方卡片 */
+.gacha-btn { font-size: 13px; padding: 7px 14px; letter-spacing: 0.5px; }
+
+/* ---------- 抽卡面板(一体化控件) ----------
+ * 用一个横向面板整合"棱牌余额 + 每日免费徽章 + 抽卡分段按钮", 替代旧的三个孤立 tab.
+ * 桌面: 单行铺开, 观感像"控制台面板";
+ * 移动: 自动换行为两行(信息在上, 抽卡按钮在下), 单行高度更矮.
+ */
+.gacha-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 43, 214, 0.28);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 43, 214, 0.08), rgba(10, 14, 30, 0.55) 60%);
+  box-shadow: 0 6px 22px rgba(255, 43, 214, 0.12), inset 0 0 24px rgba(255, 43, 214, 0.06);
+  width: min(720px, 92vw);
+}
+/* 左侧余额条: 大数字凸出货币, 与主页面 cores-balance 视觉一致 */
+.gp-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4px 14px 4px 6px;
+  border-right: 1px solid rgba(255, 43, 214, 0.18);
+}
+.gp-balance .shard-amt {
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--neon-lime);
+  text-shadow: 0 0 12px rgba(170, 255, 0, 0.55);
+  letter-spacing: 0.06em;
+}
+.gp-lbl { font-family: var(--mono); font-size: 11px; color: #7d93b4; letter-spacing: 0.18em; margin-top: 2px; }
+
+/* 中部: 每日免费徽章按钮(小尺寸, 装饰性但可点击) */
+.gp-free {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 92px;
+  padding: 6px 12px;
+  border: 1px dashed rgba(170, 255, 0, 0.5);
+  border-radius: 10px;
+  background: rgba(170, 255, 0, 0.06);
+  color: var(--neon-lime);
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.14s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.gp-free:not(:disabled):hover {
+  transform: translateY(-1px);
+  background: rgba(170, 255, 0, 0.14);
+  box-shadow: 0 0 18px rgba(170, 255, 0, 0.45);
+}
+.gp-free-icon { font-size: 18px; line-height: 1; }
+.gp-free > span:nth-child(2) { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; }
+.gp-free-hint { font-size: 10px; font-family: var(--mono); color: rgba(170, 255, 0, 0.85); letter-spacing: 0.1em; }
+.gp-free-claimed {
+  border-style: solid;
+  border-color: rgba(143, 169, 200, 0.35);
+  background: rgba(143, 169, 200, 0.06);
+  color: #7d93b4;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+.gp-free-claimed .gp-free-hint { color: #7d93b4; }
+
+/* 右侧: 分段抽卡按钮(单抽 | 十连), 一体化外观—— 相邻边框合并, 与传统 tabs 观感区分 */
+.gp-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 43, 214, 0.5);
+  box-shadow: 0 0 14px rgba(255, 43, 214, 0.15);
+  flex: 1;
+  min-width: 240px;
+}
+.gp-draw {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 14px;
+  border: none;
+  background: rgba(255, 43, 214, 0.08);
+  color: #fff;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+  position: relative;
+}
+.gp-draw + .gp-draw { border-left: 1px solid rgba(255, 43, 214, 0.35); }
+.gp-draw:hover {
+  background: rgba(255, 43, 214, 0.22);
+  box-shadow: inset 0 0 24px rgba(255, 43, 214, 0.28);
+}
+/* 棱牌不足: 灰阶 + 禁止悬停高亮, 与商店购买按钮 .poor 观感统一 */
+.gp-draw:disabled,
+.gp-draw.poor {
+  cursor: not-allowed;
+  background: rgba(80, 90, 110, 0.12);
+  box-shadow: none;
+}
+.gp-draw:disabled .gp-draw-title,
+.gp-draw.poor .gp-draw-title { color: #6f86a8; text-shadow: none; }
+.gp-draw:disabled .gp-draw-cost,
+.gp-draw.poor .gp-draw-cost { color: #6f86a8; }
+.gp-draw:disabled:hover,
+.gp-draw.poor:hover { background: rgba(80, 90, 110, 0.12); box-shadow: none; }
+.gp-draw-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #ff2bd6;
+  text-shadow: 0 0 10px rgba(255, 43, 214, 0.55);
+}
+.gp-draw-cost { font-family: var(--mono); font-size: 12px; color: var(--neon-lime); letter-spacing: 0.08em; }
+/* 单抽 · 每日免费模式: 保留柠檬绿主题底色/cost 区分免费, 但标题字色与"单抽"品红一致(视觉锚点相同, 让用户看清"这就是单抽的替代").
+   标题字数较长(6 字), 减小字距避免挤压. */
+.gp-single.gp-free-mode {
+  background: linear-gradient(180deg, rgba(170, 255, 0, 0.14), rgba(10, 14, 30, 0.35) 70%);
+}
+.gp-single.gp-free-mode .gp-draw-title { font-size: 14px; letter-spacing: 0.06em; }
+.gp-single.gp-free-mode .gp-draw-cost { color: var(--neon-lime); }
+.gp-single.gp-free-mode:hover { background: linear-gradient(180deg, rgba(170, 255, 0, 0.28), rgba(10, 14, 30, 0.35) 70%); box-shadow: inset 0 0 24px rgba(170, 255, 0, 0.28); }
+/* 十连按钮: 主推项目, 用更亮的 accent 底色暗示"更划算" */
+.gp-ten .gp-draw-title { color: #37e6ff; text-shadow: 0 0 12px rgba(55, 230, 255, 0.6); }
+.gp-ten { background: linear-gradient(180deg, rgba(55, 230, 255, 0.08), rgba(255, 43, 214, 0.12)); }
+.gp-ten:hover { background: linear-gradient(180deg, rgba(55, 230, 255, 0.22), rgba(255, 43, 214, 0.22)); }
 .btn.poor, .btn:disabled { color: #6f86a8; border-color: rgba(143, 169, 200, 0.25); background: transparent; cursor: not-allowed; box-shadow: none; transform: none; }
 .btn.poor:hover, .btn:disabled:hover { color: #6f86a8; background: transparent; box-shadow: none; transform: none; }
 
-/* 每日免费抽卡按钮：柠檬绿高亮，与棱牌货币色呼应 */
+/* 每日免费抽卡按钮：柠檬绿高亮，与棱牌货币色呼应. 尺寸继承 .gacha-btn 的紧凑规格. */
 .btn.free-draw {
   color: var(--neon-lime);
   border-color: rgba(170, 255, 0, 0.5);
   background: rgba(170, 255, 0, 0.08);
-  font-size: 16px;
+  font-size: 13px;
   padding: 12px 30px;
 }
 .btn.free-draw:hover { color: #fff; background: rgba(170, 255, 0, 0.2); box-shadow: 0 0 22px rgba(170, 255, 0, 0.55); }
@@ -474,14 +614,29 @@ html, body {
 .btn.free-draw.claimed:hover { color: #6f86a8; background: transparent; box-shadow: none; transform: none; }
 
 /* ---------- 机库：外观网格 ---------- */
+/* 机库整屏采用"顶固定 + 底固定 + 中间滚"布局(与图鉴/云同步/排行榜/闯关一致):
+   顶部: sub / h2 / cores-balance / gacha-bar;
+   中间: skin-grid(flex:1 独立滚动);
+   底部: btn-back (margin-top:auto) + hint. */
+.screen.hangar-screen {
+  justify-content: flex-start;
+  padding: 24px 20px 18px;
+  gap: 12px;
+  overflow: hidden;
+}
 .skin-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 16px;
+  gap: 12px;
   width: min(880px, 92vw);
-  max-height: 54vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px;
+  /* Grid 作为 flex:1 子元素会拿到额外高度, 默认 align-content:stretch 会把行等分拉伸导致卡片被压扁.
+     用 start 让行按内容自然高度堆叠, 多余空间留在下方, 超出则由 overflow-y 滚动. */
+  align-content: start;
 }
 .skin-card {
   pointer-events: auto;
@@ -496,6 +651,10 @@ html, body {
   gap: 6px;
   overflow: hidden;
   transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s;
+  /* Grid item 默认 align-self:stretch, 会随所在行的最矮内容被"拉齐"到略扁; 显式 start 让卡片保持自然高度. */
+  align-self: start;
+  /* 兜底最小高度: 精确容纳 rar(11) + canvas(96) + name(16) + stars(14) + perk(30) + action(30) + 3 gap + padding, 约 240px. */
+  min-height: 250px;
 }
 .skin-card::before {
   content: "";
@@ -578,7 +737,39 @@ html, body {
 .gr-tag.refund { color: #8fa9c8; border: 1px solid rgba(143,169,200,0.4); }
 
 /* ---------- 图鉴 CODEX_STYLES_ANCHOR ---------- */
-.screen.codex-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 16px; }
+/* ---------- 图鉴 ---------- */
+/* 通用「顶部标题固定 + 中间滚动 + 底部返回固定」布局:
+ *  - 图鉴/机库/云同步/排行榜/闯关 共用此模式;
+ *  - screen 自身 overflow:hidden, 不接管滚动;
+ *  - 顶部 sub/h2/进度条/余额/操作栏 按普通流依次排列(占据顶部空间);
+ *  - 中间一个专用 wrapper(codex-scroll/skin-grid/cloud-body/rank-list/campaign-list) 用 flex:1 + min-height:0 + overflow-y:auto 独立滚动;
+ *  - 返回按钮 margin-top:auto 推到底部, hint 紧随其下.
+ * 好处: 标题顶/返回底锚点在任何视口高度都稳定, 滚动时上下工具条不漂移.
+ */
+.screen.codex-screen {
+  justify-content: flex-start;
+  padding: 24px 20px 18px;
+  gap: 12px;
+  overflow: hidden;
+}
+/* codex 中间容器: 包 body + 里程碑, 一起滚动. overflow-x:hidden 明确禁止左右滑动. */
+.codex-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: min(96vw, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* codex 内的固定顶栏: 进度条不参与滚动 */
+.screen.codex-screen .codex-prog { flex: 0 0 auto; }
+/* 返回按钮贴底: 图鉴/机库/云同步/排行榜通用 */
+.screen.codex-screen > #btn-back,
+.screen.hangar-screen > #btn-back,
+.screen.cloud-screen > #btn-back,
+.screen.rank-screen > #btn-back { margin-top: auto; }
 
 /* 统一图鉴内各段宽度, 使进度条 / 分区网格 / 里程碑左右对齐 */
 .codex-prog,
@@ -992,16 +1183,26 @@ html, body {
   .shop-name { font-size: 15px; }
   .shop-effect { font-size: 12px; }
 
-  /* 机库：外观网格 + 抽卡结果 */
-  .skin-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); width: 92vw; max-height: 50vh; gap: 12px; }
+  /* 机库：外观网格 + 抽卡结果. 移动端行间距(row-gap)比列间距更大, 视觉上把上下卡片明确分开——
+     12px 在 canvas 大色块 + 卡片顶部亮条的高对比下几乎看不见, 需要拉大到 18px. */
+  .skin-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); width: 92vw; column-gap: 12px; row-gap: 26px; }
   .skin-canvas { width: 84px; height: 84px; }
-  .gacha-bar { width: 100%; flex-direction: column; align-items: center; }
-  .gacha-btn { width: min(92vw, 360px); }
+  .gacha-bar { width: 100%; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px; }
+  /* 移动端抽卡按钮: 极致紧凑, 单行放 3 个不换行, 最大化下方卡片区 */
+  .gacha-btn { width: auto; padding: 6px 10px; font-size: 12px; letter-spacing: 0; }
   .gacha-result { width: 92vw; }
+  /* 抽卡面板移动端: 余额+免费在一行, 抽卡按钮独立占满宽度换到下一行 */
+  .gacha-panel { padding: 8px 10px; gap: 8px; }
+  .gp-balance { padding: 2px 10px 2px 4px; flex-direction: row; gap: 6px; border-right: none; border-bottom: 1px solid rgba(255, 43, 214, 0.15); padding-bottom: 6px; }
+  .gp-balance .shard-amt { font-size: 20px; }
+  .gp-free { min-width: 82px; padding: 4px 10px; }
+  .gp-free-icon { font-size: 16px; }
+  .gp-actions { flex-basis: 100%; min-width: 0; }
+  .gp-draw { padding: 8px 10px; }
+  .gp-draw-title { font-size: 14px; letter-spacing: 0.1em; }
 
   /* 机库界面：移动端整页向下滚动（取消网格内部嵌套滚动，避免双层滚动冲突） */
-  .screen.hangar-screen { justify-content: flex-start; }
-  .screen.hangar-screen .skin-grid { max-height: none; overflow: visible; }
+  /* 机库/图鉴/云同步/排行榜的移动端布局与桌面一致(顶固定+底固定+中间滚), 无需额外覆盖 */
 
   /* 菜单/结算按钮：大号竖排，触摸友好 */
   .menu-btns { width: 100%; flex-direction: column; align-items: center; gap: 12px; }
@@ -1021,8 +1222,23 @@ html, body {
 .btn.btn-rank:hover { color: #fff; background: rgba(255, 210, 63, 0.18); box-shadow: 0 0 22px rgba(255, 210, 63, 0.6); }
 
 /* ---------- 云同步界面 ---------- */
-.screen.cloud-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 14px; }
-.cloud-body { display: flex; flex-direction: column; align-items: stretch; gap: 14px; width: min(92vw, 460px); }
+.screen.cloud-screen {
+  justify-content: flex-start;
+  padding: 24px 20px 18px;
+  gap: 12px;
+  overflow: hidden;
+}
+/* 云同步中间容器: 卡片+按钮列表, 独立滚动 */
+.cloud-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  width: min(92vw, 460px);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 /* 云界面所有按钮统一宽度: 卡片外的操作按钮由 cloud-body stretch 撑满(460), 返回按钮单独对齐同宽 */
 .cloud-screen .btn { box-sizing: border-box; width: 100%; margin: 0; }
 .cloud-screen > .btn { width: min(92vw, 460px); }
@@ -1087,9 +1303,22 @@ html, body {
 .cloud-status.err { color: #ff6b7d; }
 
 /* ---------- 排行榜界面 ---------- */
-.screen.rank-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 12px; }
+.screen.rank-screen {
+  justify-content: flex-start;
+  padding: 24px 20px 18px;
+  gap: 10px;
+  overflow: hidden;
+}
 .rank-sub { font-family: var(--mono); font-size: 12px; color: #8fa9c8; letter-spacing: 0.12em; }
-.rank-list { display: flex; flex-direction: column; gap: 8px; width: min(94vw, 520px); }
+.rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(94vw, 520px);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 .rank-loading, .rank-empty { font-family: var(--mono); font-size: 14px; color: #6f86a8; padding: 24px; text-align: center; }
 .rank-row {
   display: flex;
@@ -1111,8 +1340,24 @@ html, body {
 .rank-row.rank-1 { border-color: rgba(255, 210, 63, 0.6); box-shadow: 0 0 16px rgba(255, 210, 63, 0.25); }
 
 /* ---------- 闯关模式：选关界面 ---------- */
-.screen.campaign-screen { justify-content: flex-start; padding: 30px 20px; overflow-y: auto; gap: 16px; }
-.campaign-list { display: flex; flex-direction: column; gap: 20px; width: min(96vw, 720px); }
+/* 闯关选关: 与图鉴/机库/云同步/排行榜同布局—— 顶固定 sub/h2/累计星星 + 中间 campaign-list 独立滚动 + 底部返回固定 */
+.screen.campaign-screen {
+  justify-content: flex-start;
+  padding: 24px 20px 18px;
+  gap: 12px;
+  overflow: hidden;
+}
+.campaign-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(96vw, 720px);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.screen.campaign-screen > #btn-back { margin-top: auto; }
 
 /* 章节容器: 用 --glow 作为主题强调色, 上锁章节整体降透明 */
 .chapter {

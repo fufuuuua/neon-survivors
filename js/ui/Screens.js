@@ -463,17 +463,34 @@ export class Screens {
     const shards = save.skins.shards;
     const selected = Skins.selected(save);
     const canFree = Skins.canFreeDraw(save);
-    const freeBtn = canFree
-      ? `<button class="btn free-draw" id="btn-free">🎁 每日免费抽卡</button>`
-      : `<button class="btn free-draw claimed" id="btn-free" disabled>✓ 今日已领取</button>`;
+    const singlePrice = Skins.priceSingle();
+    const tenPrice = Skins.priceTen();
+    const canSingle = shards >= singlePrice;
+    const canTen = shards >= tenPrice;
+    // 抽卡面板: "单抽"槽位与"每日免费"合并——可领取免费时显示"每日免费"入口(柠檬绿),
+    // 领取后自动切换成"单抽 ✦ 100"(品红). 十连独立作为主推项.
+    // 棱牌不足时对应按钮 disabled + .poor 灰阶, 与商店购买按钮观感一致.
+    const singleSlotHTML = canFree
+      ? `<button class="gp-draw gp-single gp-free-mode" id="btn-single" data-mode="free">
+           <span class="gp-draw-title">每日免费单抽</span>
+           <span class="gp-draw-cost">🎁 今日可领</span>
+         </button>`
+      : `<button class="gp-draw gp-single" id="btn-single" data-mode="paid"${canSingle ? "" : " disabled"}>
+           <span class="gp-draw-title">单抽</span>
+           <span class="gp-draw-cost">✦ ${singlePrice}</span>
+         </button>`;
     const el = this._make(`
       <div class="sub">HANGAR · 机库</div>
       <h2 class="neon-title">战机外观</h2>
-      <div class="cores-balance"><span class="shard-amt">✦ ${shards}</span> <span class="lbl">棱牌</span></div>
-      <div class="gacha-bar">
-        ${freeBtn}
-        <button class="btn gacha-btn" id="btn-draw1">单抽 · ✦ ${Skins.priceSingle()}</button>
-        <button class="btn btn-2 gacha-btn" id="btn-draw10">十连 · ✦ ${Skins.priceTen()}</button>
+      <div class="gacha-panel">
+        <div class="gp-balance"><span class="shard-amt">✦ ${shards}</span><span class="gp-lbl">棱牌</span></div>
+        <div class="gp-actions">
+          ${singleSlotHTML}
+          <button class="gp-draw gp-ten" id="btn-draw10"${canTen ? "" : " disabled"}>
+            <span class="gp-draw-title">十连</span>
+            <span class="gp-draw-cost">✦ ${tenPrice}</span>
+          </button>
+        </div>
       </div>
       <div class="skin-grid"></div>
       <button class="btn btn-3" id="btn-back">← 返回</button>
@@ -526,13 +543,19 @@ export class Screens {
     }
     this.root.appendChild(el);
 
-    const draw1 = el.querySelector("#btn-draw1");
+    const single = el.querySelector("#btn-single");
     const draw10 = el.querySelector("#btn-draw10");
-    if (shards < Skins.priceSingle()) { draw1.disabled = true; draw1.classList.add("poor"); }
-    if (shards < Skins.priceTen()) { draw10.disabled = true; draw10.classList.add("poor"); }
-    draw1.addEventListener("click", () => onDraw(1));
-    draw10.addEventListener("click", () => onDraw(10));
-    if (canFree && onFreeDraw) el.querySelector("#btn-free").addEventListener("click", onFreeDraw);
+    // paid 模式下棱牌不足: 加 .poor 灰阶(disabled 属性已在模板里设好)
+    if (single.dataset.mode === "paid" && !canSingle) single.classList.add("poor");
+    // 单抽槽位: data-mode 决定走哪条路径(free=每日免费, paid=消耗棱牌单抽)
+    single.addEventListener("click", () => {
+      if (single.disabled) return;
+      if (single.dataset.mode === "free") { if (onFreeDraw) onFreeDraw(); }
+      else { onDraw(1); }
+    });
+    // 十连: 棱牌不足时 disabled + .poor 灰阶提示
+    if (!canTen) draw10.classList.add("poor");
+    draw10.addEventListener("click", () => { if (!draw10.disabled) onDraw(10); });
     el.querySelector("#btn-back").addEventListener("click", onBack);
   }
 
@@ -586,12 +609,14 @@ export class Screens {
         <div class="cp-bar"><div class="cp-fill" style="width:${prog.total ? (prog.owned / prog.total * 100).toFixed(1) : 0}%"></div></div>
         <div class="cp-text">收集进度 <b>${prog.owned}</b> / ${prog.total}</div>
       </div>
-      <div class="codex-body"></div>
-      <div class="codex-achv-title">
-        <span class="cat-tag">ACHIEVEMENTS</span>
-        <span class="cat-cn">成就 · 收集里程碑</span>
+      <div class="codex-scroll">
+        <div class="codex-body"></div>
+        <div class="codex-achv-title">
+          <span class="cat-tag">ACHIEVEMENTS</span>
+          <span class="cat-cn">成就 · 收集里程碑</span>
+        </div>
+        <div class="codex-milestones"></div>
       </div>
-      <div class="codex-milestones"></div>
       <button class="btn btn-3" id="btn-back">← 返回</button>
       <div class="hint">局内首次遭遇即录入图鉴 · 未发掘条目以黑色轮廓显示 · 达成里程碑可领取奖励</div>
     `, "codex-screen");
