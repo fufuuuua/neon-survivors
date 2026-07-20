@@ -787,21 +787,18 @@ html, body {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
-  /* 主菜单: 单页整屏显示 —— 顶部预留 44px 给悬浮 user-bar, 底部收紧, 内容整体压缩以塞进 8+ 个按钮.
-     若极小屏(如 iPhone SE 竖屏)仍装不下, .screen 的 overflow-y: auto 兜底提供滚动. */
+  /* 主菜单: 单页整屏显示 —— 顶部预留 44px 给悬浮 user-bar, 保持与其他界面相近的字号 & 间距.
+     若极小屏仍装不下, .screen 的 overflow-y: auto 兜底提供滚动. */
   .screen.menu-screen {
     justify-content: center;
-    padding: 44px 12px 14px;
-    gap: 10px;
+    padding: 44px 12px 18px;
+    gap: 14px;
   }
-  /* 首屏标题/信息压缩, 保持视觉层级但更紧凑, 不与 user-bar 顶到一起 */
-  .screen.menu-screen h1 { font-size: clamp(30px, 10.5vw, 52px); margin: 0; }
-  .screen.menu-screen .sub { font-size: 11px; letter-spacing: 0.16em; }
-  .screen.menu-screen .cores-balance { font-size: 18px; }
-  .screen.menu-screen .best-row { font-size: 11px; gap: 6px 12px; }
-  .screen.menu-screen .menu-btns { gap: 8px; }
-  .screen.menu-screen .btn { padding: 10px 22px; font-size: 15px; width: min(88vw, 340px); }
-  /* 主菜单 hint 与 user-bar 冗余(触摸操作全靠按钮), 隐藏以省纵向空间 */
+  /* 标题略缩(避免与 user-bar 顶到一起), 但保持主视觉体量 */
+  .screen.menu-screen h1 { font-size: clamp(38px, 12vw, 64px); margin: 0; }
+  .screen.menu-screen .best-row { gap: 8px 14px; }
+  .screen.menu-screen .menu-btns { gap: 12px; }
+  /* 按钮沿用移动端全局尺寸(360px, padding 14/24), 不再额外压缩; 只在主菜单 hint 隐藏节省一行 */
   .screen.menu-screen .hint { display: none; }
   /* 暂停界面：移动端垂直居中 */
   .screen.pause-screen {
