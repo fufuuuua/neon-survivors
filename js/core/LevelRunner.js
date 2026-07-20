@@ -3,17 +3,21 @@
  *
  * 玩法(第一章):
  *  - 战机从世界下方出发, 沿一条带转折的霓虹通道向上突进, 抵达顶端终点即通关。
- *  - 生命值 3 点(心形 HUD): 触碰墙壁 -1, 被敌人撞击 -1, 归零即失败。
- *  - 走廊内会不断生成追击小怪, 玩家沿面朝方向自动射击, 需一边闪避一边清怪。
+ *  - 生命值 3 点(心形 HUD): 触碰墙壁 -1, 被敌人/敌方弹幕击中 -1, 归零即失败。
+ *  - 玩家武器与敌人类型完全复用无限模式(chaser/rusher/splitter/tank + blaster 主武器),
+ *    差别只在: 不生成 Boss、不掉经验/道具、无升级选择。
  *  - 通道沿途散布 3 颗能量星, 拾取数量决定本关星级(0..3)。
  *  - 有时间限制: 倒计时归零仍未抵达终点判定失败, 可重试。
  *
- * 与生存模式解耦: 复用 game.player 仅用于「造型渲染 + 引擎尾焰」, 移动/碰撞/射击/敌人 全部由本引擎驱动,
- * 不触发任何武器/升级/Boss 逻辑, 也不动 Game 的对象池。相机复用 game.camera(边界即世界边界)。
+ * 与生存模式的接线:
+ *   移动/墙壁扣血/星星/终点/HUD 由本引擎驱动;
+ *   敌人池/玩家武器/子弹/敌方弹幕/网格 直接复用 game 的对象池与 Player._updateWeapons.
+ *   接触/弹幕命中玩家时不走 Player.takeDamage(会扣 Player.hp), 改为触发本引擎的 3 心扣减.
+ *   击杀敌人默认会掉经验晶体, 本引擎每帧末清 gems 池以避免触发升级界面.
  */
 import { CONFIG } from "../config.js";
 import { Vector2 } from "../utils/Vector2.js";
-import { TAU, clamp, rand } from "../utils/math.js";
+import { TAU, clamp, rand, weightedChoice } from "../utils/math.js";
 import { Skins } from "../systems/Skins.js";
 
 const SPEED = 300;         // 闯关固定移速(不受皮肤/局外强化影响, 保证关卡平衡)
@@ -24,17 +28,10 @@ const FINISH_PAD = 10;     // 抵达终点的纵向判定余量
 const HP_MAX = 3;
 const INVULN_TIME = 1.1;   // 受击后的无敌帧, 避免贴墙/贴怪连续掉血
 
-// 玩家射击(自动开火, 沿面朝方向)
-const SHOOT_INTERVAL = 0.32;
-const BULLET_SPEED = 640;
-const BULLET_LIFE = 1.1;
-const BULLET_R = 5;
-
-// 敌人生成 / 属性
-const ENEMY_SPAWN_INTERVAL = 1.7;
-const ENEMY_R = 14;
-const ENEMY_SPEED = 150;
-const ENEMY_HP = 2;        // 需 2 发子弹击落, 保证战术压力
+// 敌人生成节奏默认值(每关可通过 level.spawn 覆盖: 更小 interval / 更大 batch = 更激烈)
+const DEFAULT_SPAWN_INTERVAL = 1.5;
+const DEFAULT_SPAWN_BATCH = 2;
+const HP_SCALE = 1;           // 敌人血量倍率(闯关关卡内固定)
 
 export class LevelRunner {
   constructor(game) {
@@ -54,7 +51,7 @@ export class LevelRunner {
     this.active = true;
 
     const g = this.game;
-    // 复用玩家实体做移动与造型渲染, 但清空武器/数值(reset), 只套用选中皮肤外观
+    // 复用玩家实体做移动/武器/造型渲染. reset() 会清空武器加成, 保证关卡数值一致.
     g.player.reset();
     const sk = Skins.get(Skins.selected(g.save));
     if (sk) g.player.skin = { id: sk.id, shape: sk.shape, accent: sk.accent, star: Math.max(1, Skins.starOf(g.save, sk.id)) };
@@ -65,6 +62,9 @@ export class LevelRunner {
     g.player.y = start.y;
     g.player.facing.set(0, -1);
     g.player.moveDir.set(0, 0);
+    // 玩家 hp 保持满(闯关不使用它, 用 3 心 HUD), 避免下方 alive 判定意外触发
+    g.player.hp = g.player.maxHp;
+    g.player.invuln = 0;
 
     this.stars = level.stars.map((s) => ({ x: s.x, y: s.y, got: false }));
     this.timeLeft = level.timeLimit;
@@ -72,19 +72,29 @@ export class LevelRunner {
     this.done = false;
     this._flameT = 0;
 
-    // 生命值 / 敌人 / 子弹 —— 关卡自管理, 不走 Game 的池
+    // 关卡自管理: 3 心 + 墙壁边沿触发 + 生成计时
     this.hp = HP_MAX;
     this.invuln = 0;
-    this._wallHit = false;         // 上一帧是否处于"越界贴墙"状态, 用于边沿触发扣血(不连扣)
-    this.enemies = [];             // { x, y, hp, r, flash }
-    this.bullets = [];             // { x, y, vx, vy, life, r, color }
-    this._shootT = SHOOT_INTERVAL; // 首发略等
-    this._spawnT = 1.2;            // 首刷延迟, 给玩家上手时间
+    this._wallHit = false;
+    this._spawnT = 1.2;
+    // 每关刷怪节奏, 支持 level.spawn 覆盖; 段宽度: widths 优先, 否则退化为等宽 radius
+    this._spawnInterval = (level.spawn && level.spawn.interval) || DEFAULT_SPAWN_INTERVAL;
+    this._spawnBatch = (level.spawn && level.spawn.batch) || DEFAULT_SPAWN_BATCH;
+    this._segWidths = Array.isArray(level.widths) && level.widths.length === level.path.length - 1
+      ? level.widths.slice()
+      : null;
 
-    // 清场: 关卡不使用生存模式的敌人/子弹/掉落, 但复用粒子系统做尾焰与拾取特效
+    // 清场: 关卡不使用生存模式的敌人/子弹/掉落/Boss, 用干净世界开始
+    g._enemyPool.clear();
+    g._projPool.clear();
+    g._ebPool.clear();
+    g._gemPool.clear();
     g.particles.clear();
     g.beams.length = 0;
     g.bosses = [];
+    // spawnSystem 本身闯关不用, 但 splitter 分裂会调 game.spawnSystem.spawnSplit(hpScale=spawnSystem.hpScale),
+    // 重置以避免残留上一局无限模式爬升过的 hpScale 影响分裂小怪血量.
+    g.spawnSystem.reset();
     g.timeScale = 1;
     g.flash = 0;
     g.camera.update(g.player, 1); // 立即对齐相机
@@ -100,13 +110,21 @@ export class LevelRunner {
     if (this.done) return;
     this.done = true;
     this.active = false;
+    // 关卡结束把 game 的池清干净, 避免残留敌人/子弹影响下一次进关或菜单
+    const g = this.game;
+    g._enemyPool.clear();
+    g._projPool.clear();
+    g._ebPool.clear();
+    g._gemPool.clear();
+    g.beams.length = 0;
+    g.bosses = [];
     const cb = this._onEnd;
     this._onEnd = null;
     if (cb) cb({ result, stars });
   }
 
   // ---------------- 几何: 通道中心线最近点 ----------------
-  /** 返回玩家点到折线(通道中心线)的最近点, 附带所在段索引 seg 与该段上的 t 参数(用于沿路径前推) */
+  /** 返回玩家点到折线(通道中心线)的最近点, 附带所在段索引 seg 与该段上的 t 参数 */
   _closestOnPath(px, py) {
     const path = this.level.path;
     let bx = path[0].x, by = path[0].y, bestD = Infinity, bestSeg = 0, bestT = 0;
@@ -122,7 +140,60 @@ export class LevelRunner {
     return { x: bx, y: by, dist: Math.sqrt(bestD), seg: bestSeg, t: bestT };
   }
 
-  /** 玩家受伤统一入口: 处理无敌帧/演出/死亡判定 */
+  /** 段 i 的通道半宽: 有 widths 用段独立值, 否则退化为 level.radius */
+  _segRadius(i) {
+    return this._segWidths ? this._segWidths[i] : this.level.radius;
+  }
+
+  /**
+   * 变宽通道的**几何并集**判定: 通道 = 所有段矩形 ∪ 所有拐点圆盘.
+   * 玩家只要落在任意一段的矩形内, 或任意拐点的圆盘内, 即视为在通道内(与视觉一致).
+   * 越界时挑"最容易滑回"的形体(excess 最小)把玩家推回边界.
+   *
+   * 边界宽容度: allowD = segR - playerR * 0.5.
+   *   - 视觉墙内沿在 segR 处; 玩家 sprite 半径 = playerR.
+   *   - 用 segR - 0.5*playerR 意味着「玩家 sprite 外沿刚碰到视觉墙内沿」时判越界, 最符合直觉.
+   *   - (旧写法 segR - playerR 过于严格, 玩家离墙还有一整个 sprite 宽的空隙就被误判扣血)
+   */
+  _insideCorridor(px, py, playerR) {
+    const path = this.level.path;
+    const margin = playerR * 0.5;
+    let inside = false;
+    let bestExcess = Infinity;
+    let bestClose = { x: path[0].x, y: path[0].y };
+    let bestAllowD = this._segRadius(0) - margin;
+    // 1) 段矩形: 用点到线段最近点判定
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1];
+      const abx = b.x - a.x, aby = b.y - a.y;
+      const len2 = abx * abx + aby * aby || 1;
+      const t = clamp(((px - a.x) * abx + (py - a.y) * aby) / len2, 0, 1);
+      const cx = a.x + abx * t, cy = a.y + aby * t;
+      const d = Math.hypot(px - cx, py - cy);
+      const allowD = this._segRadius(i) - margin;
+      if (d <= allowD) inside = true;
+      const excess = d - allowD;
+      if (excess < bestExcess) {
+        bestExcess = excess; bestClose = { x: cx, y: cy }; bestAllowD = allowD;
+      }
+    }
+    // 2) 拐点圆盘: 半径取相邻两段较大宽, 与渲染时的 disc 半径一致
+    for (let i = 0; i < path.length; i++) {
+      const rPrev = i > 0 ? this._segRadius(i - 1) : this._segRadius(0);
+      const rNext = i < path.length - 1 ? this._segRadius(i) : this._segRadius(path.length - 2);
+      const cornerR = Math.max(rPrev, rNext);
+      const d = Math.hypot(px - path[i].x, py - path[i].y);
+      const allowD = cornerR - margin;
+      if (d <= allowD) inside = true;
+      const excess = d - allowD;
+      if (excess < bestExcess) {
+        bestExcess = excess; bestClose = { x: path[i].x, y: path[i].y }; bestAllowD = allowD;
+      }
+    }
+    return { inside, close: bestClose, allowD: bestAllowD };
+  }
+
+  /** 玩家受伤统一入口(3 心系统): 处理无敌帧/演出/死亡判定. 不走 Player.takeDamage */
   _hurtPlayer(reason) {
     if (this.invuln > 0 || this.done) return;
     this.hp -= 1;
@@ -130,7 +201,7 @@ export class LevelRunner {
     const g = this.game;
     g.camera.shake(reason === "wall" ? 12 : 16);
     g.screenFlash(reason === "wall" ? 0.35 : 0.5);
-    g.audio.hit && g.audio.hit();
+    g.audio.hurt && g.audio.hurt();
     g.particles.burst(g.player.x, g.player.y, "#ff6b7d", 22, 260, 3, 0.6);
     g.particles.text(g.player.x, g.player.y - 32, "-1", "#ff6b7d", 22);
     if (this.hp <= 0) {
@@ -140,27 +211,38 @@ export class LevelRunner {
     }
   }
 
+  /** 与无限模式一致的敌人权重表(按关卡时长渐进解锁高级敌种) */
+  _enemyTypePool() {
+    const t = this.elapsed;
+    const pool = [{ value: "chaser", weight: 10 }];
+    if (t > 8)  pool.push({ value: "rusher",   weight: 7 });
+    if (t > 20) pool.push({ value: "splitter", weight: 5 });
+    if (t > 32) pool.push({ value: "tank",     weight: 4 });
+    return pool;
+  }
+
   /**
-   * 全屏生成敌人: 在当前相机可视范围的边缘随机挑一个点(通道内外都可以),
-   * 敌人无需受走廊约束, 可从墙外冲进来撞玩家, 强化"到处都是威胁"的压迫感.
+   * 全屏边缘生成一波敌人: 每边随机, 用 game.spawnEnemy 走标准对象池.
+   * 共享无限模式的 AI/造型/掉落; 掉落的经验晶体在每帧末尾清空, 避免触发升级界面.
    */
-  _spawnEnemy() {
+  _spawnWave() {
     const g = this.game;
     const cam = g.camera;
     const W = g.viewW, H = g.viewH;
-    const margin = 40; // 出屏外一点点, 让敌人从画面外缓入, 视觉上更自然
-    // 四条边随机: 0=上 1=右 2=下 3=左
-    const edge = Math.floor(rand(0, 4));
-    let ex, ey;
-    if (edge === 0)      { ex = cam.x + rand(-margin, W + margin); ey = cam.y - margin; }
-    else if (edge === 1) { ex = cam.x + W + margin;                ey = cam.y + rand(-margin, H + margin); }
-    else if (edge === 2) { ex = cam.x + rand(-margin, W + margin); ey = cam.y + H + margin; }
-    else                 { ex = cam.x - margin;                    ey = cam.y + rand(-margin, H + margin); }
-    // 世界边界钳制, 避免刷到世界外反被相机丢掉
-    ex = clamp(ex, ENEMY_R, CONFIG.world.width - ENEMY_R);
-    ey = clamp(ey, ENEMY_R, CONFIG.world.height - ENEMY_R);
-    this.enemies.push({ x: ex, y: ey, hp: ENEMY_HP, r: ENEMY_R, flash: 0 });
-    g.particles.burst(ex, ey, "#ff6b7d", 10, 160, 2, 0.35);
+    const margin = 60;
+    const pool = this._enemyTypePool();
+    for (let i = 0; i < this._spawnBatch; i++) {
+      const type = weightedChoice(pool);
+      const edge = Math.floor(rand(0, 4));
+      let ex, ey;
+      if (edge === 0)      { ex = cam.x + rand(-margin, W + margin); ey = cam.y - margin; }
+      else if (edge === 1) { ex = cam.x + W + margin;                ey = cam.y + rand(-margin, H + margin); }
+      else if (edge === 2) { ex = cam.x + rand(-margin, W + margin); ey = cam.y + H + margin; }
+      else                 { ex = cam.x - margin;                    ey = cam.y + rand(-margin, H + margin); }
+      ex = clamp(ex, 24, CONFIG.world.width - 24);
+      ey = clamp(ey, 24, CONFIG.world.height - 24);
+      g.spawnEnemy(type, ex, ey, HP_SCALE);
+    }
   }
 
   // ---------------- 更新 ----------------
@@ -171,7 +253,7 @@ export class LevelRunner {
     this.elapsed += dt;
     if (this.invuln > 0) this.invuln = Math.max(0, this.invuln - dt);
 
-    // 移动(键盘/摇杆), 不触发任何武器逻辑
+    // ---- 1) 移动: 键盘/摇杆, 用闯关固定移速, 不走 Player.update ----
     const mv = g.input.getMoveVector();
     if (mv.lengthSq > 0) {
       p.x += mv.x * SPEED * dt;
@@ -192,25 +274,21 @@ export class LevelRunner {
       p.moveDir.set(0, 0);
     }
     p.animT += dt;
-
-    // 世界边界兜底
     p.x = clamp(p.x, p.radius, CONFIG.world.width - p.radius);
     p.y = clamp(p.y, p.radius, CONFIG.world.height - p.radius);
 
-    // 通道约束: 距中心线超过 (radius - 机身半径) 则贴墙滑回;
-    // 边沿触发扣血——只有"从非贴墙 -> 贴墙"这一帧扣一次, 无敌帧结束再贴仍会再扣.
-    const near = this._closestOnPath(p.x, p.y);
-    const maxD = this.level.radius - p.radius;
-    if (near.dist > maxD) {
-      const nx = (p.x - near.x) / (near.dist || 1);
-      const ny = (p.y - near.y) / (near.dist || 1);
-      p.x = near.x + nx * maxD;
-      p.y = near.y + ny * maxD;
+    // ---- 2) 通道约束: 越界滑回 + 边沿触发扣血.
+    // 变宽通道下, 玩家只要在任意一段的可行走范围内就合法(并集判定), 而非只看最近段.
+    const box = this._insideCorridor(p.x, p.y, p.radius);
+    if (!box.inside) {
+      const dx = p.x - box.close.x, dy = p.y - box.close.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      p.x = box.close.x + (dx / dist) * box.allowD;
+      p.y = box.close.y + (dy / dist) * box.allowD;
       if (!this._wallHit) {
         this._wallHit = true;
         this._hurtPlayer("wall");
       }
-      // 撞墙火花(常驻贴墙也保留少量, 强化边界感)
       if (Math.floor(this.elapsed * 30) % 3 === 0) {
         g.particles.spark(p.x, p.y, rand(-40, 40), rand(-40, 40), 0.25, this.theme.wall, 2.2);
       }
@@ -218,85 +296,56 @@ export class LevelRunner {
       this._wallHit = false;
     }
 
-    // 自动射击: 沿 facing 每 SHOOT_INTERVAL 发射一颗
-    this._shootT -= dt;
-    if (this._shootT <= 0) {
-      this._shootT += SHOOT_INTERVAL;
-      const dir = (p.facing.lengthSq > 0) ? p.facing : { x: 0, y: -1 };
-      const c = p.skin.accent || this.theme.wall;
-      this.bullets.push({
-        x: p.x + dir.x * (p.radius + 4),
-        y: p.y + dir.y * (p.radius + 4),
-        vx: dir.x * BULLET_SPEED,
-        vy: dir.y * BULLET_SPEED,
-        life: BULLET_LIFE,
-        r: BULLET_R,
-        color: c,
-      });
-      g.audio.shoot && g.audio.shoot();
-    }
+    // ---- 3) 玩家武器: 直接调用 Player._updateWeapons, 与无限模式完全一致 ----
+    // (blaster 自动瞄敌开火; 未解锁的其它武器 count=0, 内部会跳过)
+    p._updateWeapons(dt, g);
 
-    // 敌人生成
+    // ---- 4) 敌人生成 ----
     this._spawnT -= dt;
     if (this._spawnT <= 0) {
-      this._spawnT += ENEMY_SPAWN_INTERVAL;
-      this._spawnEnemy();
+      this._spawnT += this._spawnInterval;
+      this._spawnWave();
     }
 
-    // 子弹: 直线飞行 + 撞敌 + 出走廊消散
-    for (const b of this.bullets) {
-      if (b.life <= 0) continue;
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      b.life -= dt;
-      if (b.life <= 0) continue;
-      for (const e of this.enemies) {
-        if (e.hp <= 0) continue;
-        const dx = e.x - b.x, dy = e.y - b.y;
-        const rr = e.r + b.r;
-        if (dx * dx + dy * dy < rr * rr) {
-          e.hp -= 1;
-          e.flash = 0.09;
-          b.life = 0;
-          g.particles.burst(b.x, b.y, b.color, 6, 200, 2, 0.28);
-          if (e.hp <= 0) {
-            g.audio.hurt && g.audio.hurt();
-            g.particles.burst(e.x, e.y, "#ff6b7d", 20, 280, 3, 0.55);
-          } else {
-            g.audio.hit && g.audio.hit();
-          }
-          break;
-        }
-      }
-      if (b.life <= 0) continue;
-      // 敌人现在可能在通道外, 子弹不再受走廊约束; 只在飞出世界边界时消散
-      if (b.x < 0 || b.y < 0 || b.x > CONFIG.world.width || b.y > CONFIG.world.height) {
-        b.life = 0;
+    // ---- 5) 敌人 AI + 网格重建 (复用无限模式 Enemy.update) ----
+    for (const e of g.enemies) e.update(dt, p, g);
+    g.grid.rebuild(g.enemies);
+
+    // ---- 6) 子弹推进 + 离屏回收 (与 Game.update 保持一致) ----
+    for (const b of g.projectiles) {
+      b.update(dt);
+      if (b.active && !g.camera.inView(b.x, b.y, 200)) b.active = false;
+    }
+    for (const b of g.enemyProjectiles) {
+      b.update(dt);
+      if (b.active && !g.camera.inView(b.x, b.y, 200)) b.active = false;
+    }
+
+    // ---- 7) 碰撞 ----
+    // 7a) 玩家子弹 vs 敌人: 复用 CollisionSystem 的实现, 逻辑与无限模式完全一致.
+    g.collisionSystem._projectilesVsEnemies();
+    // 7b) 敌人 vs 玩家: 用 3 心系统, 不调 player.takeDamage.
+    for (const e of g.enemies) {
+      if (!e.active) continue;
+      const rr = e.radius + p.radius;
+      const dx = e.x - p.x, dy = e.y - p.y;
+      if (dx * dx + dy * dy <= rr * rr) { this._hurtPlayer("enemy"); break; }
+    }
+    // 7c) 敌方弹幕 vs 玩家: 3 心, 命中即销毁弹幕
+    for (const b of g.enemyProjectiles) {
+      if (!b.active) continue;
+      const rr = b.radius + p.radius;
+      const dx = b.x - p.x, dy = b.y - p.y;
+      if (dx * dx + dy * dy <= rr * rr) {
+        this._hurtPlayer("bullet");
+        b.active = false;
       }
     }
-    this.bullets = this.bullets.filter((b) => b.life > 0);
 
-    // 敌人: 朝玩家追击, 全屏活动(可穿墙来袭), 撞玩家自毁并扣血
-    for (const e of this.enemies) {
-      if (e.hp <= 0) continue;
-      if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
-      const dx = p.x - e.x, dy = p.y - e.y;
-      const len = Math.hypot(dx, dy) || 1;
-      e.x += (dx / len) * ENEMY_SPEED * dt;
-      e.y += (dy / len) * ENEMY_SPEED * dt;
-      // 世界边界钳制(允许穿墙, 但不能跑出地图, 否则相机会丢)
-      e.x = clamp(e.x, e.r, CONFIG.world.width - e.r);
-      e.y = clamp(e.y, e.r, CONFIG.world.height - e.r);
-      const rr = (e.r + p.radius) * 0.9;
-      if (dx * dx + dy * dy < rr * rr) {
-        this._hurtPlayer("enemy");
-        e.hp = 0;
-        g.particles.burst(e.x, e.y, "#ff6b7d", 18, 240, 3, 0.5);
-      }
-    }
-    this.enemies = this.enemies.filter((e) => e.hp > 0);
+    // ---- 8) 每帧清 gems 池: 击杀敌人默认会掉经验, 闯关不使用经验/升级 ----
+    g._gemPool.clear();
 
-    // 拾取能量星
+    // ---- 9) 星星拾取 ----
     for (const s of this.stars) {
       if (s.got) continue;
       if (Vector2.distSq(p, s) < (p.radius + STAR_R) ** 2) {
@@ -307,11 +356,14 @@ export class LevelRunner {
       }
     }
 
-    // 粒子/相机
+    // ---- 10) 粒子/相机 + 池回收 ----
     g.particles.update(dt);
     g.camera.update(p, dt);
+    g._enemyPool.reclaim();
+    g._projPool.reclaim();
+    g._ebPool.reclaim();
 
-    // 通关: 抵达终点纵向阈值
+    // ---- 11) 通关判定: 抵达终点 ----
     if (p.y <= this.finish.y + FINISH_PAD) {
       const got = this.stars.filter((s) => s.got).length;
       g.audio.bossKill && g.audio.bossKill();
@@ -322,7 +374,7 @@ export class LevelRunner {
       return;
     }
 
-    // 超时失败
+    // ---- 12) 超时失败 ----
     this.timeLeft -= dt;
     if (this.timeLeft <= 0) {
       this.timeLeft = 0;
@@ -343,15 +395,26 @@ export class LevelRunner {
     this._drawCorridor(ctx);
     this._drawMarkers(ctx);
     this._drawStars(ctx);
-    this._drawEnemies(ctx);
-    this._drawBullets(ctx);
+
+    // 敌人(在通道之上, 玩家之下), 完全复用 Enemy.render 的霓虹几何造型
+    for (const e of g.enemies) if (cam.inView(e.x, e.y)) e.render(ctx);
+
+    // 玩家子弹 / 光束: lighter 混合出霓虹能量质感, 与无限模式一致
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (const b of g.projectiles) b.render(ctx);
+    ctx.restore();
+
+    // 敌方弹幕: 普通混合, 敌意光球
+    for (const b of g.enemyProjectiles) b.render(ctx);
+
     this._drawPlayer(ctx);
     g.particles.render(ctx);
     cam.end(ctx);
 
     this._drawHud(ctx);
 
-    // 通关瞬间的全屏白闪(演出)
+    // 通关/受击瞬间的全屏白闪(演出)
     if (g.flash > 0.001) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, g.flash);
@@ -386,44 +449,97 @@ export class LevelRunner {
     for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
   }
 
+  /**
+   * 构造整条通道形体为单个 Path2D: 所有段矩形 + 所有拐点圆盘的**几何并集**.
+   * expand 为整体外扩量, 用于分层同心带(外发光墙 / 深色地面 / 主题地面).
+   *
+   * 绕向坑(重要): Canvas y 轴向下, 屏幕坐标里
+   *  - 段矩形按 a+n→b+n→b-n→a-n 是「逆时针」;
+   *  - arc(0, TAU) 默认 anticlockwise=false, 屏幕上是「顺时针」.
+   * 两者相反, nonzero 规则下重叠区域绕数=0 会变成「洞」——即通道内部露出背景, 视觉与判定都对不上.
+   * 解决: 圆盘用 anticlockwise=true, 与段矩形同为逆时针; 重叠区域绕数=2, 仍算内部, 视觉纯并集.
+   */
+  _buildCorridorPath(expand) {
+    const p = new Path2D();
+    const path = this.level.path;
+    // 段矩形: 屏幕坐标下为逆时针
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len; // 单位法线
+      const r = this._segRadius(i) + expand;
+      p.moveTo(a.x + nx * r, a.y + ny * r);
+      p.lineTo(b.x + nx * r, b.y + ny * r);
+      p.lineTo(b.x - nx * r, b.y - ny * r);
+      p.lineTo(a.x - nx * r, a.y - ny * r);
+      p.closePath();
+    }
+    // 拐点圆盘(与段矩形同向): 半径取相邻段较大 r, 兼作首尾端点
+    for (let i = 0; i < path.length; i++) {
+      const rPrev = i > 0 ? this._segRadius(i - 1) : this._segRadius(0);
+      const rNext = i < path.length - 1 ? this._segRadius(i) : this._segRadius(path.length - 2);
+      const r = Math.max(rPrev, rNext) + expand;
+      p.moveTo(path[i].x + r, path[i].y);
+      p.arc(path[i].x, path[i].y, r, 0, TAU, true); // 逆时针, 与段矩形同向
+    }
+    return p;
+  }
+
   _drawCorridor(ctx) {
-    const r = this.level.radius;
     ctx.save();
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    // 外层: 发光墙壁
-    this._tracePath(ctx);
-    ctx.strokeStyle = this.theme.wall;
-    ctx.globalAlpha = 0.9;
-    ctx.shadowBlur = 26;
-    ctx.shadowColor = this.theme.wall;
-    ctx.lineWidth = 2 * r + 14;
-    ctx.stroke();
-    // 内层: 深色可行走地面(挖出通道)
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
-    this._tracePath(ctx);
-    ctx.strokeStyle = "#05070f";
-    ctx.lineWidth = 2 * r + 2;
-    ctx.stroke();
-    this._tracePath(ctx);
-    ctx.strokeStyle = this.theme.floor;
-    ctx.lineWidth = 2 * r;
-    ctx.stroke();
+    if (this._segWidths) {
+      // 分段变宽: 三层同心带都用整条 Path2D 一次 fill, shadow 只作用一次.
+      // 外层: 发光墙(扩 7)
+      const outer = this._buildCorridorPath(7);
+      ctx.shadowBlur = 26;
+      ctx.shadowColor = this.theme.wall;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = this.theme.wall;
+      ctx.fill(outer, "nonzero");
+      // 中层: 深色地面(原尺寸), 去 shadow
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#05070f";
+      ctx.fill(this._buildCorridorPath(1), "nonzero");
+      // 内层: 主题地面色(轻微收缩), 只有内部无外发光, 段间无套圈斑
+      ctx.fillStyle = this.theme.floor;
+      ctx.fill(this._buildCorridorPath(0), "nonzero");
+    } else {
+      // 等宽通道: 保持原来的整条 stroke 写法, 转折处衔接最平滑, 性能最佳.
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      const r = this.level.radius;
+      this._tracePath(ctx);
+      ctx.strokeStyle = this.theme.wall;
+      ctx.globalAlpha = 0.9;
+      ctx.shadowBlur = 26;
+      ctx.shadowColor = this.theme.wall;
+      ctx.lineWidth = 2 * r + 14;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      this._tracePath(ctx);
+      ctx.strokeStyle = "#05070f";
+      ctx.lineWidth = 2 * r + 2;
+      ctx.stroke();
+      this._tracePath(ctx);
+      ctx.strokeStyle = this.theme.floor;
+      ctx.lineWidth = 2 * r;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
   _drawMarkers(ctx) {
     const start = this.level.path[0];
     const fin = this.finish;
-    // 起点: 淡环
     ctx.save();
     ctx.globalAlpha = 0.5;
     ctx.strokeStyle = this.theme.wall;
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(start.x, start.y, 34, 0, TAU); ctx.stroke();
     ctx.restore();
-    // 终点: 脉动发光环 + "终点"
     const pulse = 0.5 + 0.5 * Math.sin(this.elapsed * 4);
     ctx.save();
     ctx.shadowBlur = 24; ctx.shadowColor = this.theme.glow;
@@ -464,50 +580,6 @@ export class LevelRunner {
     p.render(ctx);
   }
 
-  /** 敌人: 红色菱形几何体, 命中闪白, 造型与生存模式区分, 关卡不复用 Enemy 类 */
-  _drawEnemies(ctx) {
-    for (const e of this.enemies) {
-      ctx.save();
-      ctx.translate(e.x, e.y);
-      ctx.rotate(this.elapsed * 2);
-      ctx.shadowBlur = 16; ctx.shadowColor = "#ff6b7d";
-      ctx.fillStyle = e.flash > 0 ? "#ffffff" : "#ff2b4a";
-      ctx.strokeStyle = "#ffd23f";
-      ctx.lineWidth = 2;
-      const r = e.r;
-      ctx.beginPath();
-      ctx.moveTo(0, -r);
-      ctx.lineTo(r, 0);
-      ctx.lineTo(0, r);
-      ctx.lineTo(-r, 0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  /** 子弹: 沿运动方向的短彗尾, 复用玩家 accent 色 */
-  _drawBullets(ctx) {
-    for (const b of this.bullets) {
-      const sp = Math.hypot(b.vx, b.vy) || 1;
-      const ux = b.vx / sp, uy = b.vy / sp;
-      const tail = b.r * 2.4;
-      ctx.save();
-      ctx.shadowBlur = 12; ctx.shadowColor = b.color;
-      ctx.strokeStyle = b.color;
-      ctx.lineCap = "round";
-      ctx.lineWidth = b.r * 1.6;
-      ctx.beginPath();
-      ctx.moveTo(b.x - ux * tail, b.y - uy * tail);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.6, 0, TAU); ctx.fill();
-      ctx.restore();
-    }
-  }
-
   /** 屏幕空间 HUD: 关卡名 / 倒计时 / 星星进度 / 生命值(三颗心) */
   _drawHud(ctx) {
     const W2 = this.game.viewW;
@@ -519,17 +591,14 @@ export class LevelRunner {
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    // 关卡编号 + 名称
     ctx.fillStyle = "#8fa9c8";
     ctx.font = "600 13px 'JetBrains Mono', monospace";
     ctx.fillText(`${this.level.id}  ${this.level.name}`, W2 / 2, 16);
-    // 倒计时
     ctx.font = "800 40px 'JetBrains Mono', monospace";
     ctx.fillStyle = urgent ? "#ff6b7d" : "#e8f6ff";
     ctx.shadowBlur = 16;
     ctx.shadowColor = urgent ? "#ff2bd6" : "#00f0ff";
     ctx.fillText(t.toFixed(1), W2 / 2, 34);
-    // 星星进度
     ctx.shadowBlur = 10; ctx.shadowColor = "#ffd23f";
     ctx.font = "700 24px 'JetBrains Mono', monospace";
     let stars = "";
@@ -538,7 +607,6 @@ export class LevelRunner {
     ctx.fillText(stars, W2 / 2, 84);
     ctx.restore();
 
-    // 生命值: 左上角三颗心, 已损失显示为暗轮廓; 无敌帧内整体闪烁提示
     ctx.save();
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
