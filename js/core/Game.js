@@ -79,6 +79,7 @@ export class Game {
     this.flash = 0;          // 全屏白闪强度 0..1
     this.beams = [];         // 瞬时电弧光束（电弧链武器）
     this._runSaveTimer = 0;  // 对局快照自动保存节流计时
+    this._bombDropCd = 0;    // 湮灭道具最近一次掉落后的抑制冷却(秒), 归零前不再刷新湮灭
 
     // 元进度存档（跨局永久成长）
     // Account 负责账号库 + 迁移旧无后缀存档; 每位玩家有独立分区 save/run。
@@ -158,13 +159,28 @@ export class Game {
 
   // ---------------- 生命周期 ----------------
   _setupCanvas() {
+    // CSS 显示尺寸: 用 canvas 元素自身的 clientWidth/Height 作为真源.
+    // 之前用 window.innerWidth/innerHeight 在移动端(浏览器动态 UI/地址栏)与 canvas 的实际 CSS 尺寸
+    // 不一致, 会导致内部像素 (DPR 缩放后) 与显示区长宽比不匹配, 表现为「网格拉成矩形/圆变椭圆」.
+    const rect = this.canvas.getBoundingClientRect();
+    const cssW = Math.max(1, Math.round(rect.width || this.canvas.clientWidth || window.innerWidth));
+    const cssH = Math.max(1, Math.round(rect.height || this.canvas.clientHeight || window.innerHeight));
+
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = window.innerWidth * dpr;
-    this.canvas.height = window.innerHeight * dpr;
+    this.canvas.width = cssW * dpr;
+    this.canvas.height = cssH * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.viewW = window.innerWidth;
-    this.viewH = window.innerHeight;
-    this.camera.resize(this.viewW, this.viewH);
+
+    // viewW/viewH: CSS 像素下的屏幕逻辑宽高, 供 HUD/暗角等屏幕空间 UI 使用.
+    this.viewW = cssW;
+    this.viewH = cssH;
+
+    // 世界缩放 (仅生存模式渲染时应用): 移动端整体缩小视图, 让可视范围更大, 角色/敌人更小.
+    // 桌面端保持 1:1. 首次进入时初始化, 后续可动态调整.
+    if (this.worldZoom == null) this.worldZoom = this.isTouch ? 0.7 : 1;
+
+    this.camera.resize(cssW, cssH);
+    // camera.zoom 在每帧 render 时根据 state 与 worldZoom 同步, 这里无需再设置.
   }
 
   _bindGlobalKeys() {
@@ -279,6 +295,8 @@ export class Game {
     this.flash = 0;
     this.beams.length = 0;
     this._runSaveTimer = 0;
+    // 相机先按当前 worldZoom 对齐, 避免续玩瞬间相机基于 zoom=1 的可视区做初始化 (会让玩家不在正中央)
+    this.camera.setZoom(this.worldZoom || 1);
     this.camera.update(this.player, 1);
     this.screens.clear();
     this.state = GameState.PLAYING;
@@ -304,6 +322,7 @@ export class Game {
     this.timeScale = 1;
     this.flash = 0;
     this.beams.length = 0;
+    this.camera.setZoom(this.worldZoom || 1);
     this.camera.update(this.player, 1); // 立即对齐
     this.screens.clear();
     this.state = GameState.PLAYING;
@@ -642,7 +661,8 @@ export class Game {
 
   onBossSpawn(boss) {
     const name = (boss && boss.def && boss.def.name) || "母核";
-    this.particles.text(this.camera.x + this.viewW / 2, this.camera.y + 80, `⚠ ${name}降临`, (boss && boss.color) || "#ff2bd6", 30);
+    // 用 camera 的世界坐标可视宽度, 在 worldZoom 下也能保证文字在屏幕中央
+    this.particles.text(this.camera.x + this.camera.worldViewW / 2, this.camera.y + 80, `⚠ ${name}降临`, (boss && boss.color) || "#ff2bd6", 30);
     this.camera.shake(18);
   }
 
@@ -714,14 +734,15 @@ export class Game {
     // 掉落经验
     this.spawnGem(enemy.x, enemy.y, enemy.xp, DropType.XP);
 
-    // 概率掉落道具
+    // 概率掉落道具. 湮灭最珍贵: 概率极低 + 冷却抑制(短期内已掉过则跳过, 玩家一场不至于连续爆屏).
     const roll = Math.random();
     if (roll < 0.015) {
       this.spawnGem(enemy.x, enemy.y, 0, DropType.HEAL);
     } else if (roll < 0.025) {
       this.spawnGem(enemy.x, enemy.y, 0, DropType.MAGNET);
-    } else if (roll < 0.03) {
+    } else if (roll < 0.027 && this._bombDropCd <= 0) {
       this.spawnGem(enemy.x, enemy.y, 0, DropType.BOMB);
+      this._bombDropCd = 25; // 掉落后 25 秒内不会再刷新湮灭
     }
   }
 
@@ -756,7 +777,11 @@ export class Game {
       this.spawnGem(boss.x + Math.cos(a) * r, boss.y + Math.sin(a) * r, Math.ceil(boss.xp / n), DropType.XP);
     }
     this.spawnGem(boss.x - 30, boss.y, 0, DropType.HEAL);
-    this.spawnGem(boss.x + 30, boss.y, 0, DropType.BOMB);
+    // 湮灭仍受掉落冷却制约, 避免击杀两个连出现的 Boss 时连爆两颗湮灭
+    if (this._bombDropCd <= 0) {
+      this.spawnGem(boss.x + 30, boss.y, 0, DropType.BOMB);
+      this._bombDropCd = 25;
+    }
     this.spawnGem(boss.x, boss.y - 30, 0, DropType.MAGNET);
   }
 
@@ -814,6 +839,9 @@ export class Game {
     // 周期性落盘对局快照（每 4 秒），保证意外关闭也能续玩
     this._runSaveTimer += dt;
     if (this._runSaveTimer >= 4) { this._runSaveTimer = 0; this._captureRun(); }
+
+    // 湮灭掉落冷却递减(真实时间): 短期内不再刷新, 避免连续爆屏
+    if (this._bombDropCd > 0) this._bombDropCd = Math.max(0, this._bombDropCd - dt);
 
     // 0) 生成敌人（含难度爬升与 Boss）
     this.spawnSystem.update(dt);
@@ -927,10 +955,19 @@ export class Game {
 
     // 闯关模式由 LevelRunner 独立渲染整幅世界（专属地图/通道/终点/HUD），与生存模式互不干扰
     if (this.state === GameState.CAMPAIGN_PLAY) {
+      // 闯关模式恒 1:1 渲染, 复位 camera.zoom 避免残留生存模式的 worldZoom 影响跟随/剔除
+      if (this.camera.zoom !== 1) this.camera.setZoom(1);
       this.levelRunner.render(ctx);
       return;
     }
 
+    // 世界层缩放: 移动端 worldZoom<1, 让整片世界视觉上"缩小", 玩家看到的可视范围更大.
+    // camera 的 zoom 属性同步该值, inView/边界/跟随都按世界坐标可视区 (= 屏幕像素/zoom) 计算.
+    // scale 必须在 camera.begin(其内部 translate) 之前, 让 translate 参数在 scale 变换下正确映射.
+    const zoom = this.worldZoom || 1;
+    if (this.camera.zoom !== zoom) this.camera.setZoom(zoom);
+    ctx.save();
+    if (zoom !== 1) ctx.scale(zoom, zoom);
     this.camera.begin(ctx);
     this._drawBackground(ctx);
 
@@ -950,6 +987,7 @@ export class Game {
     if (this.state !== GameState.MENU) this.player.render(ctx);
     this.particles.render(ctx);
     this.camera.end(ctx);
+    ctx.restore();
 
     // 暗角（屏幕空间，绘制在游戏世界之上、HUD 之下，因此不会压住血条/经验条）
     this._drawVignette(ctx);
@@ -1016,8 +1054,9 @@ export class Game {
     const cam = this.camera;
     const startX = Math.floor(cam.x / g) * g;
     const startY = Math.floor(cam.y / g) * g;
-    const endX = cam.x + this.viewW;
-    const endY = cam.y + this.viewH;
+    // 用 camera 的世界坐标可视区宽/高, 与 worldZoom 下实际渲染范围一致, 保证网格覆盖满可见区域.
+    const endX = cam.x + cam.worldViewW;
+    const endY = cam.y + cam.worldViewH;
 
     ctx.save();
     ctx.strokeStyle = "rgba(0,240,255,0.07)";

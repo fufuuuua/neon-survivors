@@ -158,18 +158,24 @@ export class Screens {
         const lvUnlocked = !coming && Campaign.levelUnlocked(save, ci, li);
         const stars = Campaign.stars(save, lv.id); // -1 未通关
         const cleared = stars >= 0;
+        const isBoss = Campaign.isBoss(lv);
         let cls = "lvl-card";
+        if (isBoss) cls += " lvl-boss";
         if (coming) cls += " lvl-coming";
         else if (!lvUnlocked) cls += " lvl-locked";
         else if (cleared) cls += " lvl-cleared";
-        const badge = coming ? "🚧" : (!lvUnlocked ? "🔒" : (cleared ? "✔" : "▶"));
+        // Boss 关用「☠」徽标; 其余按状态显示
+        const badge = coming ? "🚧"
+          : (!lvUnlocked ? "🔒"
+          : (isBoss ? "☠"
+          : (cleared ? "✔" : "▶")));
         const starsHTML = coming
           ? `<span class="lvl-soon">敬请期待</span>`
           : `<span class="lvl-stars">${this._starRow(stars)}</span>`;
         return `
           <button class="${cls}" data-ci="${ci}" data-li="${li}"
             ${(coming || !lvUnlocked) ? "disabled" : ""}
-            style="--glow:${glow}">
+            style="--glow:${isBoss ? "#ff2bd6" : glow}">
             <span class="lvl-id">${esc(lv.id)}</span>
             <span class="lvl-badge">${badge}</span>
             <span class="lvl-name">${esc(lv.name)}</span>
@@ -324,18 +330,32 @@ export class Screens {
     el.querySelector("#btn-back").addEventListener("click", onBack);
   }
 
-  /** 升级三选一（左侧展示当前能力，右侧三张强化卡） */
+  /**
+   * 升级三选一。
+   * - 桌面: 左侧「当前装备」面板 + 右侧三张卡, hint 提示 1/2/3 快捷键.
+   * - 移动: 卡片纵向铺满一屏, 当前装备折叠到顶部「📊 当前能力」按钮, 点击弹窗展开.
+   *   目的: 一页不需要滚动即可完整看到三张卡片(小屏可读性).
+   */
   showLevelUp(player, choices, onPick) {
     this.clear();
     const el = this._make(`
-      <div class="sub">LEVEL UP · 等级 ${player.level}</div>
-      <h2 class="neon-title">选择强化</h2>
+      <div class="lu-head">
+        <div class="sub">LEVEL UP · 等级 ${player.level}</div>
+        <h2 class="neon-title">选择强化</h2>
+      </div>
       <div class="levelup-body">
         ${this._loadoutHTML(player)}
         <div class="cards"></div>
       </div>
+      <button class="btn lu-loadout-btn" id="btn-loadout" type="button">📊 当前能力</button>
       <div class="hint">${this.isTouch ? "点击卡片选择强化" : "按 1 / 2 / 3 快速选择"}</div>
-    `);
+      <div class="lu-modal" id="lu-modal" hidden>
+        <div class="lu-modal-inner">
+          ${this._loadoutHTML(player, "能力总览")}
+          <button class="btn lu-modal-close" id="lu-modal-close" type="button">关闭</button>
+        </div>
+      </div>
+    `, "levelup-screen");
     const cardsEl = el.querySelector(".cards");
     choices.forEach((u, i) => {
       const lv = UpgradeSystem.getLevel(player, u.id);
@@ -354,6 +374,12 @@ export class Screens {
       cardsEl.appendChild(card);
     });
     this.root.appendChild(el);
+
+    // 「当前能力」弹窗: 打开/关闭 + 点空白遮罩关闭(内容区不响应)
+    const modal = el.querySelector("#lu-modal");
+    el.querySelector("#btn-loadout").addEventListener("click", () => { modal.hidden = false; });
+    el.querySelector("#lu-modal-close").addEventListener("click", () => { modal.hidden = true; });
+    modal.addEventListener("click", (e) => { if (e.target === modal) modal.hidden = true; });
   }
 
   /** 等级进度小圆点 */
@@ -403,7 +429,7 @@ export class Screens {
         <button class="btn btn-3" id="btn-shop">◆ 强化实验室</button>
         <button class="btn btn-2" id="btn-menu">主菜单</button>
       </div>
-    `);
+    `, "gameover-screen");
     this.root.appendChild(el);
     el.querySelector("#btn-restart").addEventListener("click", onRestart);
     el.querySelector("#btn-shop").addEventListener("click", onShop);

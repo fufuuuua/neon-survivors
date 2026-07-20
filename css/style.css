@@ -168,6 +168,11 @@ html, body {
 .screen.cloud-screen,
 .screen.campaign-screen,
 .screen.rank-screen { backdrop-filter: none; }
+/* 结算屏: 蒙层要更实, 否则中心的"本局获得"点数会被后台仍在演出的爆炸/粒子透出来看不清 */
+.screen.gameover-screen {
+  background: radial-gradient(circle at 50% 50%, rgba(6, 8, 20, 0.94), rgba(3, 4, 10, 0.98));
+  backdrop-filter: blur(6px);
+}
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -249,6 +254,12 @@ html, body {
   flex-wrap: wrap;
   max-width: 1100px;
 }
+
+/* 桌面端默认: 「当前能力」按钮 + 弹窗只在移动端出现, 桌面沿用左侧内联 loadout 面板 */
+.lu-head { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.lu-loadout-btn { display: none; }
+.lu-modal { display: none; }
+.lu-modal[hidden] { display: none; }
 
 /* ---------- 当前能力总览面板 ---------- */
 .loadout {
@@ -376,11 +387,14 @@ html, body {
   padding: 10px 22px;
   border: 1px solid rgba(255, 43, 214, 0.35);
   border-radius: 8px;
-  background: rgba(255, 43, 214, 0.06);
+  /* 深色底 + 淡品红叠层, 保证数字在任何后景下都清晰(不再是 0.06 的极淡玻璃感) */
+  background: linear-gradient(rgba(10, 14, 30, 0.85), rgba(10, 14, 30, 0.85)),
+              rgba(255, 43, 214, 0.08);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 .reward-box b { color: var(--neon-magenta); font-size: 19px; }
-/* 两种货币在结算收益里各自使用主题色, 避免撞色（提高优先级覆盖上面的默认 b 规则） */
-.reward-box b.cur-core { color: var(--neon-magenta); text-shadow: 0 0 12px var(--neon-magenta); }
+/* 两种货币在结算收益里各自使用主题色, 与主菜单/商店一致(暗物质核心=紫, 棱牌=柠檬绿) */
+.reward-box b.cur-core { color: var(--neon-violet); text-shadow: 0 0 12px var(--neon-violet); }
 .reward-box b.shard-amt { color: var(--neon-lime); text-shadow: 0 0 12px var(--neon-lime); }
 
 /* ---------- 强化实验室商店 ---------- */
@@ -783,6 +797,11 @@ html, body {
     justify-content: center;
     padding: 24px 12px;
   }
+  /* 结算界面(GAME OVER): 移动端居中显示, 数据行数固定不需要滚动, 与主菜单同风格 */
+  .screen.gameover-screen {
+    justify-content: center;
+    padding: 24px 12px;
+  }
   .screen h1 { font-size: clamp(34px, 12vw, 58px); }
   .screen h2 { font-size: clamp(20px, 6vw, 30px); }
 
@@ -793,6 +812,167 @@ html, body {
   .card { width: min(92vw, 360px); min-height: auto; padding: 16px; }
   .card .icon { font-size: 38px; }
   .card .desc { font-size: 13px; }
+
+  /* 升级界面(移动端): 强制一屏不滚动, 三张卡横向铺满可视宽度.
+     - screen 不滚动 + 撑满可用高度
+     - 隐藏内联 loadout 面板 (通过顶部 lu-loadout-btn 弹窗查看)
+     - 每张卡: 顶部大图标(带 accent 径向光晕) → 名称 → 等级胶囊 → 描述 → 底部 pips
+       靠 flex + margin-top:auto 让 pips 永远贴底, 描述占据剩余空间
+  */
+  .screen.levelup-screen {
+    overflow: hidden;
+    justify-content: flex-start;
+    padding: 16px 10px 14px;
+    gap: 10px;
+    height: 100%;
+  }
+  .screen.levelup-screen .lu-head {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    flex: 0 0 auto;
+  }
+  .screen.levelup-screen .sub { font-size: 12px; letter-spacing: 0.18em; }
+  /* "选择强化" 标题: 原 clamp(18px, 5.2vw, 24px) 在小屏偏小(约 19px), 放大以强化主视觉 */
+  .screen.levelup-screen h2 { font-size: clamp(26px, 7.5vw, 36px); margin: 0; }
+  .screen.levelup-screen .lu-loadout-btn {
+    display: inline-block;
+    width: auto;
+    padding: 12px 28px;
+    font-size: 14px;
+    letter-spacing: 0.16em;
+    flex: 0 0 auto;
+    margin: 2px auto 0;
+  }
+  /* 桌面端左侧内联 loadout 面板在移动端隐藏, 让位给三张卡片 */
+  .screen.levelup-screen .levelup-body > .loadout { display: none; }
+  .screen.levelup-screen .levelup-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    gap: 8px;
+  }
+  /* 三张卡横向排列 + 高度撑满可视区 */
+  .screen.levelup-screen .cards {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 2px;
+  }
+  /* 卡片本体: 强化 accent 视觉锚点 (顶部径向光晕 + accent 描边), 让三张卡各自成为独立"选项" */
+  .screen.levelup-screen .card {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 45%;
+    padding: 18px 8px 12px;
+    gap: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    background:
+      radial-gradient(circle at 50% -10%, color-mix(in srgb, var(--accent, var(--neon-cyan)) 24%, transparent), transparent 62%),
+      var(--panel);
+    border: 1px solid color-mix(in srgb, var(--accent, var(--neon-cyan)) 38%, rgba(143, 169, 200, 0.18));
+  }
+  .screen.levelup-screen .card::before { height: 2px; }
+  .screen.levelup-screen .card .icon {
+    font-size: 34px;
+    line-height: 1;
+    margin: 0 0 8px;
+    filter: drop-shadow(0 0 10px var(--accent, var(--neon-cyan)));
+  }
+  .screen.levelup-screen .card .name {
+    font-size: 14.5px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #fff;
+    line-height: 1.2;
+    margin: 0 0 6px;
+    position: relative;
+    padding-bottom: 6px;
+  }
+  /* 名称下方 accent 短分隔线, 让"标题区/内容区"边界清晰 */
+  .screen.levelup-screen .card .name::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 1px;
+    background: var(--accent, var(--neon-cyan));
+    box-shadow: 0 0 6px var(--accent, var(--neon-cyan));
+    opacity: 0.75;
+  }
+  /* 等级/满级信息独立成胶囊, 与描述明确分区 */
+  .screen.levelup-screen .card .lvl {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--accent, var(--neon-cyan));
+    padding: 3px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent, var(--neon-cyan)) 45%, transparent);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.32);
+    margin: 0 0 8px;
+    white-space: nowrap;
+  }
+  /* 描述: 弹性占据卡片中部剩余空间, 溢出时最多 6 行 */
+  .screen.levelup-screen .card .desc {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #c8d6ee;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
+    overflow: hidden;
+    margin: 0 0 8px;
+  }
+  .screen.levelup-screen .card .pips { margin-top: auto; gap: 4px; }
+  .screen.levelup-screen .card .pip { width: 7px; height: 7px; }
+  .screen.levelup-screen .hint { flex: 0 0 auto; font-size: 11px; margin-top: 2px; }
+
+  /* 「当前能力」弹窗: 移动端专用. 通过 hidden 属性控制显隐 */
+  .screen.levelup-screen .lu-modal {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    background: rgba(3, 4, 10, 0.86);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 10px;         /* 左右与 levelup-screen 保持一致(10px), 让 inner 与卡片区同宽 */
+    pointer-events: auto;
+    animation: fadeIn 0.2s ease;
+  }
+  .screen.levelup-screen .lu-modal[hidden] { display: none; }
+  .screen.levelup-screen .lu-modal-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    /* 与三张卡整体铺开的宽度对齐: cards 容器 = 100% - screen 左右 padding (10px*2) - cards 自身 padding (2px*2) */
+    width: calc(100vw - 24px);
+    max-width: 100%;
+    max-height: 82vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .screen.levelup-screen .lu-modal .loadout {
+    max-width: none;
+    width: 100%;
+  }
+  /* 关闭键与弹窗内的能力面板等宽(都 = 弹窗宽度).
+     注: 移动端媒体查询后半段有一条更后位的 ".btn { width: min(92vw, 360px) }" 会覆盖 width:100%,
+     导致关闭键窄于面板. 用更具体的父选择器提升特异性, 强制关闭键铺满弹窗内容宽. */
+  .screen.levelup-screen .lu-modal .lu-modal-close { width: 100%; padding: 12px 20px; }
 
   /* 商店列表 */
   .shop-list { width: 92vw; max-height: 58vh; }
@@ -939,15 +1119,15 @@ html, body {
 .chapter.chapter-locked .chapter-prog { color: #8fa9c8; }
 .chapter-intro { font-size: 12.5px; color: #9fb4d2; line-height: 1.6; margin: 8px 0 12px; }
 
-/* 关卡卡片网格 */
-.lvl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+/* 关卡卡片网格: 10 关分两行 x 5 列(桌面), 移动端自适应 */
+.lvl-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .lvl-card {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 16px 10px 14px;
+  padding: 14px 8px 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   background: rgba(6, 10, 22, 0.7);
@@ -963,10 +1143,22 @@ html, body {
 }
 .lvl-card:disabled { cursor: not-allowed; opacity: 0.5; }
 .lvl-card.lvl-cleared { border-color: color-mix(in srgb, var(--glow, #00f0ff) 55%, transparent); }
+/* Boss 关: 用品红脉动边框与「☠」徽标, 与常规关明显区分 */
+.lvl-card.lvl-boss {
+  border-color: color-mix(in srgb, var(--glow, #ff2bd6) 60%, transparent);
+  background: linear-gradient(180deg, rgba(255,43,214,0.10), rgba(6,10,22,0.7) 55%);
+}
+.lvl-card.lvl-boss:not(:disabled) { animation: bossPulse 2.6s ease-in-out infinite; }
+.lvl-card.lvl-boss .lvl-badge { color: #ff2bd6; text-shadow: 0 0 12px rgba(255,43,214,0.9); }
+.lvl-card.lvl-boss .lvl-id { color: #ff2bd6; }
+@keyframes bossPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(255, 43, 214, 0); }
+  50%      { box-shadow: 0 0 22px rgba(255, 43, 214, 0.55); }
+}
 .lvl-id { font-family: var(--mono); font-size: 12px; font-weight: 800; color: var(--glow, #00f0ff); letter-spacing: 0.08em; }
 .lvl-badge { font-size: 22px; line-height: 1; }
-.lvl-name { font-size: 14px; font-weight: 700; color: #fff; text-align: center; }
-.lvl-stars { font-family: var(--mono); font-size: 16px; color: #ffd23f; letter-spacing: 2px; }
+.lvl-name { font-size: 13px; font-weight: 700; color: #fff; text-align: center; }
+.lvl-stars { font-family: var(--mono); font-size: 14px; color: #ffd23f; letter-spacing: 2px; }
 .lvl-soon { font-family: var(--mono); font-size: 12px; color: #7d93b4; }
 .lvl-card.lvl-coming .lvl-name { color: #7d93b4; }
 
@@ -982,9 +1174,9 @@ html, body {
 .res-tip { font-size: 14px; color: #9fb4d2; }
 .res-btns { margin-top: 8px; }
 
-/* 移动端: 关卡卡片仍保持三列(信息量小), 章节内边距收紧 */
+/* 移动端: 10 关采用 2 列布局(纵向 5 行), 保证卡片可点击面积 */
 @media (max-width: 720px) {
-  .lvl-grid { gap: 8px; }
+  .lvl-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .lvl-card { padding: 12px 6px 10px; }
   .lvl-name { font-size: 12.5px; }
   .chapter { padding: 14px 12px; }

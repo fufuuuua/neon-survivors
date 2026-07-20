@@ -129,8 +129,9 @@ export class Player {
     // 效果 1: 对屏内敌人造成重创（Boss 也吃, 但伤害有上限, 避免一键秒 Boss）
     const cam = game.camera;
     const pad = 40;
+    // 用 camera 的世界坐标可视区尺寸, 保证 worldZoom(移动端缩放) 下实际能看到的敌人都覆盖到.
     const minX = cam.x - pad, minY = cam.y - pad;
-    const maxX = cam.x + game.viewW + pad, maxY = cam.y + game.viewH + pad;
+    const maxX = cam.x + cam.worldViewW + pad, maxY = cam.y + cam.worldViewH + pad;
     const dmgNormal = 9999;
     const dmgBoss = 240 + this.level * 12; // 缓和的 Boss 伤害曲线
     for (const e of game.enemies) {
@@ -226,15 +227,30 @@ export class Player {
     if (hops > 0) game.audio.hit();
   }
 
+  /**
+   * 灼蚀场生效半径.
+   *  - PC(视口宽 >= 720): 直接用武器 radius, 保持养成手感.
+   *  - 移动端(视口宽 < 720): 限制半径 <= 视口宽度的 25%(即直径覆盖 <= 屏宽 50%),
+   *    避免范围铺满屏幕导致小屏画面被荧光淹没且失去挑战性.
+   * radius 存储值不变(避免影响升级面板显示与再次升级的乘数计算), 只在判定/渲染时钳制.
+   */
+  _auraEffRadius(game) {
+    const r = this.weapons.aura.radius;
+    if (!game || game.viewW >= 720) return r;
+    return Math.min(r, game.viewW * 0.25);
+  }
+
   /** 灼蚀场：以玩家为中心的持续范围伤害（经空间网格查询近邻） */
   _tickAura(dt, game) {
     const w = this.weapons.aura;
     if (w.radius <= 0) return; // 未解锁
+    // 记录当前视口宽度, 供 render() 时同步限制半径(渲染无 game 上下文)
+    this._viewW = game.viewW;
     this._timers.aura -= dt;
     if (this._timers.aura > 0) return;
     this._timers.aura = w.tick;
     const dmg = w.damage * w.tick * this.damageMul;
-    const rr = w.radius;
+    const rr = this._auraEffRadius(game);
     game.grid.queryCircle(this.x, this.y, rr + 32, (e) => {
       if (!e.active) return;
       if (Vector2.distSq(e, this) < (rr + e.radius) ** 2) {
@@ -296,15 +312,16 @@ export class Player {
 
   render(ctx) {
     const a = this.weapons.aura;
-    // 灼蚀场视觉
+    // 灼蚀场视觉: 与判定一致地在移动端 clamp 到视口宽度 25%(直径 <= 50%)
     if (a.radius > 0) {
+      const rr = (this._viewW && this._viewW < 720) ? Math.min(a.radius, this._viewW * 0.25) : a.radius;
       ctx.save();
       ctx.globalAlpha = 0.10;
       ctx.fillStyle = a.accent;
-      ctx.beginPath(); ctx.arc(this.x, this.y, a.radius, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(this.x, this.y, rr, 0, TAU); ctx.fill();
       ctx.globalAlpha = 0.4; ctx.strokeStyle = a.accent; ctx.lineWidth = 1.5;
       ctx.shadowBlur = 12; ctx.shadowColor = a.accent;
-      ctx.beginPath(); ctx.arc(this.x, this.y, a.radius, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(this.x, this.y, rr, 0, TAU); ctx.stroke();
       ctx.restore();
     }
 

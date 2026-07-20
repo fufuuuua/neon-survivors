@@ -97,7 +97,7 @@ export const CONFIG = Object.freeze({
 
   // 拾取道具参数
   items: {
-    bombRadius: 380,     // 湮灭：仅波及玩家周围此半径内的敌人（非全屏）
+    bombRadius: 260,     // 湮灭：波及玩家周围此半径内的敌人（缩小自 380, 避免几乎清屏）
     bombDamageBoss: 300, // 湮灭对范围内 Boss 的伤害
   },
 

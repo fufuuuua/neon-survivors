@@ -73,10 +73,11 @@ export class SpawnSystem {
     const cam = this.game.camera;
     const pad = CONFIG.spawn.spawnPad;
     const angle = rand(0, TAU);
-    // 以屏幕中心 + 半屏对角线为半径，确保在视野外
-    const dist = Math.hypot(cam.viewW, cam.viewH) / 2 + pad;
-    const cx = cam.x + cam.viewW / 2;
-    const cy = cam.y + cam.viewH / 2;
+    // 用 camera 世界坐标可视区 (兼容 worldZoom 缩放): 保证敌人真正生成在玩家看不到的地方
+    const vw = cam.worldViewW, vh = cam.worldViewH;
+    const dist = Math.hypot(vw, vh) / 2 + pad;
+    const cx = cam.x + vw / 2;
+    const cy = cam.y + vh / 2;
     let x = cx + Math.cos(angle) * dist;
     let y = cy + Math.sin(angle) * dist;
     x = Math.max(20, Math.min(CONFIG.world.width - 20, x));

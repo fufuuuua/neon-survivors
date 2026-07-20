@@ -42,6 +42,7 @@ export class LevelRunner {
 
   /**
    * 开始一关。level 为 Campaign 的关卡定义(type: "path"), theme 为章节主题配色。
+   * 关卡可选携带 finale = { arena, bosses, interval, hpMul, spawn }: 抵达路径终点后触发的最终决战阶段.
    * onEnd({ result: "clear"|"fail"|"abort", stars }) 在关卡结束时回调。
    */
   start(level, theme, onEnd) {
@@ -51,7 +52,6 @@ export class LevelRunner {
     this.active = true;
 
     const g = this.game;
-    // 复用玩家实体做移动/武器/造型渲染. reset() 会清空武器加成, 保证关卡数值一致.
     g.player.reset();
     const sk = Skins.get(Skins.selected(g.save));
     if (sk) g.player.skin = { id: sk.id, shape: sk.shape, accent: sk.accent, star: Math.max(1, Skins.starOf(g.save, sk.id)) };
@@ -62,7 +62,6 @@ export class LevelRunner {
     g.player.y = start.y;
     g.player.facing.set(0, -1);
     g.player.moveDir.set(0, 0);
-    // 玩家 hp 保持满(闯关不使用它, 用 3 心 HUD), 避免下方 alive 判定意外触发
     g.player.hp = g.player.maxHp;
     g.player.invuln = 0;
 
@@ -72,19 +71,28 @@ export class LevelRunner {
     this.done = false;
     this._flameT = 0;
 
-    // 关卡自管理: 3 心 + 墙壁边沿触发 + 生成计时
+    // 3 心 / 无敌帧 / 生成计时
     this.hp = HP_MAX;
     this.invuln = 0;
     this._wallHit = false;
     this._spawnT = 1.2;
-    // 每关刷怪节奏, 支持 level.spawn 覆盖; 段宽度: widths 优先, 否则退化为等宽 radius
+
+    // 通道关卡参数(段宽 + 敌种 + 生成节奏 + 数值倍率)
     this._spawnInterval = (level.spawn && level.spawn.interval) || DEFAULT_SPAWN_INTERVAL;
     this._spawnBatch = (level.spawn && level.spawn.batch) || DEFAULT_SPAWN_BATCH;
+    this._spawnTiers = (level.spawn && level.spawn.tiers) || level.enemyTiers || null;
     this._segWidths = Array.isArray(level.widths) && level.widths.length === level.path.length - 1
       ? level.widths.slice()
       : null;
+    this._speedMul = level.speedMul || 1;
+    this._hpMul = level.hpMul || 1;
 
-    // 清场: 关卡不使用生存模式的敌人/子弹/掉落/Boss, 用干净世界开始
+    // 阶段: "corridor"(通道)  → 到达终点后, 若关卡有 finale, 切到 "finale"(竞技场 Boss 战)
+    this.phase = "corridor";
+    this.hasFinale = !!level.finale;
+    this.finale = null; // finale 状态在触发时初始化
+
+    // 清场
     g._enemyPool.clear();
     g._projPool.clear();
     g._ebPool.clear();
@@ -92,12 +100,53 @@ export class LevelRunner {
     g.particles.clear();
     g.beams.length = 0;
     g.bosses = [];
-    // spawnSystem 本身闯关不用, 但 splitter 分裂会调 game.spawnSystem.spawnSplit(hpScale=spawnSystem.hpScale),
-    // 重置以避免残留上一局无限模式爬升过的 hpScale 影响分裂小怪血量.
     g.spawnSystem.reset();
     g.timeScale = 1;
     g.flash = 0;
-    g.camera.update(g.player, 1); // 立即对齐相机
+    g.camera.update(g.player, 1);
+  }
+
+  /** 通道通关时的处理: 若有 finale, 切入 Boss 决战阶段; 否则直接结算 */
+  _enterFinaleOrClear() {
+    const g = this.game;
+    const p = g.player;
+    const gotStars = this.stars.filter((s) => s.got).length;
+    if (!this.hasFinale) {
+      g.audio.bossKill && g.audio.bossKill();
+      g.screenFlash(0.7);
+      g.camera.shake(24);
+      g.particles.burst(p.x, p.y, this.theme.glow, 40, 320, 5, 1.0);
+      this._finish("clear", gotStars);
+      return;
+    }
+    // 进入 Boss 决战: 清空通道敌人/子弹, 保留玩家状态与已得星数.
+    const f = this.level.finale;
+    this.phase = "finale";
+    this.finale = {
+      arena: f.arena,
+      queue: (f.bosses || []).slice(),
+      interval: f.interval || 3.0,
+      hpMul: f.hpMul || 1,
+      spawnCfg: f.spawn || null,
+      spawnT: 1.5,
+      bossT: 1.2,
+      active: null,
+      killed: 0,
+      total: (f.bosses || []).length,
+      corridorStars: gotStars,      // 通道段拿到的星数, 决定 Boss 战失败时能保底的星数
+    };
+    // 玩家 dash 到竞技场中心, 通道结束的仪式感
+    g.particles.burst(p.x, p.y, this.theme.glow, 40, 320, 5, 1.0);
+    g.screenFlash(0.6);
+    g.camera.shake(20);
+    p.x = f.arena.x;
+    p.y = f.arena.y + f.arena.r * 0.55;
+    g.audio.bossAttack && g.audio.bossAttack();
+    // 清空场上残余
+    g._enemyPool.clear();
+    g._ebPool.clear();
+    g.bosses = [];
+    g.particles.text(f.arena.x, f.arena.y - 60, "母核降临", "#ff2bd6", 40);
   }
 
   /** 主动退出(返回选关) */
@@ -211,8 +260,15 @@ export class LevelRunner {
     }
   }
 
-  /** 与无限模式一致的敌人权重表(按关卡时长渐进解锁高级敌种) */
+  /**
+   * 敌人权重表.
+   *  - 有 level.enemyTiers / spawn.tiers 时, 严格用该列表(等权重), 保证每关"能出什么怪"稳定可控.
+   *  - 否则退回按 elapsed 递进解锁(与无限模式一致).
+   */
   _enemyTypePool() {
+    if (this._spawnTiers && this._spawnTiers.length) {
+      return this._spawnTiers.map((v) => ({ value: v, weight: 1 }));
+    }
     const t = this.elapsed;
     const pool = [{ value: "chaser", weight: 10 }];
     if (t > 8)  pool.push({ value: "rusher",   weight: 7 });
@@ -222,8 +278,9 @@ export class LevelRunner {
   }
 
   /**
-   * 全屏边缘生成一波敌人: 每边随机, 用 game.spawnEnemy 走标准对象池.
-   * 共享无限模式的 AI/造型/掉落; 掉落的经验晶体在每帧末尾清空, 避免触发升级界面.
+   * 全屏边缘生成一波敌人. 关卡的 speedMul/hpMul 用于:
+   *  - hpMul: 通过 hpScale 参数传给 spawnEnemy(直接乘到 maxHp).
+   *  - speedMul: 敌人 spawn 之后, 手动缩放 e.speed(基础速度乘倍率), 保证追击型能追上玩家(300 px/s).
    */
   _spawnWave() {
     const g = this.game;
@@ -241,7 +298,71 @@ export class LevelRunner {
       else                 { ex = cam.x - margin;                    ey = cam.y + rand(-margin, H + margin); }
       ex = clamp(ex, 24, CONFIG.world.width - 24);
       ey = clamp(ey, 24, CONFIG.world.height - 24);
-      g.spawnEnemy(type, ex, ey, HP_SCALE);
+      const e = g.spawnEnemy(type, ex, ey, this._hpMul);
+      if (e && this._speedMul !== 1) e.speed *= this._speedMul;
+    }
+  }
+
+  /**
+   * Boss 决战阶段(finale)推进:
+   *  - 玩家被约束在圆形竞技场 arena 内(墙壁不扣血, 只滑回);
+   *  - 同一时刻只有 1 个 Boss 存活, 前一个死后 interval 秒登场下一个;
+   *  - 骚扰性小怪可选(f.spawn), 与生存模式敌人共用池;
+   *  - 全部 Boss 击败 = 3 星通关; 时间耗尽 = fail 但保留通道段的星数(保底).
+   */
+  _updateFinale(dt) {
+    const g = this.game;
+    const f = this.finale;
+    // Boss 死亡检查(注意 Boss 死后会被 _killBoss 从 game.bosses 移除, e.active=false)
+    if (f.active && !f.active.active) {
+      f.active = null;
+      f.killed += 1;
+      f.bossT = f.interval;
+    }
+    // 全部击败 → 3 星通关
+    if (!f.active && f.queue.length === 0 && f.killed >= f.total) {
+      const p = g.player;
+      g.audio.bossKill && g.audio.bossKill();
+      g.screenFlash(0.9);
+      g.camera.shake(32);
+      g.particles.burst(p.x, p.y, this.theme.glow, 60, 500, 6, 1.4);
+      g.particles.text(p.x, p.y - 60, "净化完成", "#aaff00", 40);
+      this._finish("clear", 3);
+      return;
+    }
+    // 下一个 Boss 登场
+    if (!f.active && f.queue.length > 0) {
+      f.bossT -= dt;
+      if (f.bossT <= 0) {
+        const type = f.queue.shift();
+        const boss = g.spawnEnemy(type, f.arena.x, f.arena.y - f.arena.r * 0.55, f.hpMul);
+        if (boss) {
+          f.active = boss;
+          g.audio.bossAttack && g.audio.bossAttack();
+          g.camera.shake(24);
+          g.particles.burst(boss.x, boss.y, boss.color, 30, 260, 4, 0.9);
+          const bname = (boss.def && boss.def.name) || "母核";
+          g.particles.text(boss.x, boss.y - 40, `⚠ ${bname}`, boss.color, 30);
+        }
+      }
+    }
+    // 骚扰性小怪(可选): 用 finale 独立节奏, 不复用通道段的 _spawnT
+    if (f.spawnCfg) {
+      f.spawnT -= dt;
+      if (f.spawnT <= 0) {
+        f.spawnT += f.spawnCfg.interval || 3.0;
+        const batch = f.spawnCfg.batch || 1;
+        const tiers = f.spawnCfg.tiers || ["chaser"];
+        for (let i = 0; i < batch; i++) {
+          const type = tiers[Math.floor(rand(0, tiers.length))];
+          // 在竞技场边缘生成, 让玩家从各方向感受威胁
+          const ang = rand(0, TAU);
+          const ex = f.arena.x + Math.cos(ang) * (f.arena.r + 40);
+          const ey = f.arena.y + Math.sin(ang) * (f.arena.r + 40);
+          const e = g.spawnEnemy(type, ex, ey, this._hpMul);
+          if (e && this._speedMul !== 1) e.speed *= this._speedMul;
+        }
+      }
     }
   }
 
@@ -277,34 +398,50 @@ export class LevelRunner {
     p.x = clamp(p.x, p.radius, CONFIG.world.width - p.radius);
     p.y = clamp(p.y, p.radius, CONFIG.world.height - p.radius);
 
-    // ---- 2) 通道约束: 越界滑回 + 边沿触发扣血.
-    // 变宽通道下, 玩家只要在任意一段的可行走范围内就合法(并集判定), 而非只看最近段.
-    const box = this._insideCorridor(p.x, p.y, p.radius);
-    if (!box.inside) {
-      const dx = p.x - box.close.x, dy = p.y - box.close.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      p.x = box.close.x + (dx / dist) * box.allowD;
-      p.y = box.close.y + (dy / dist) * box.allowD;
-      if (!this._wallHit) {
-        this._wallHit = true;
-        this._hurtPlayer("wall");
-      }
-      if (Math.floor(this.elapsed * 30) % 3 === 0) {
-        g.particles.spark(p.x, p.y, rand(-40, 40), rand(-40, 40), 0.25, this.theme.wall, 2.2);
+    // ---- 2) 空间约束:
+    //   corridor 阶段: 段矩形 ∪ 拐点圆盘, 越界扣血;
+    //   finale   阶段: 圆形竞技场, 越界只滑回, 不扣血(伤害只来自 Boss/小怪).
+    if (this.phase === "finale") {
+      const a = this.finale.arena;
+      const dx = p.x - a.x, dy = p.y - a.y;
+      const d = Math.hypot(dx, dy);
+      const rmax = a.r - p.radius;
+      if (d > rmax) {
+        const nx = dx / (d || 1), ny = dy / (d || 1);
+        p.x = a.x + nx * rmax;
+        p.y = a.y + ny * rmax;
       }
     } else {
-      this._wallHit = false;
+      const box = this._insideCorridor(p.x, p.y, p.radius);
+      if (!box.inside) {
+        const dx = p.x - box.close.x, dy = p.y - box.close.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        p.x = box.close.x + (dx / dist) * box.allowD;
+        p.y = box.close.y + (dy / dist) * box.allowD;
+        if (!this._wallHit) {
+          this._wallHit = true;
+          this._hurtPlayer("wall");
+        }
+        if (Math.floor(this.elapsed * 30) % 3 === 0) {
+          g.particles.spark(p.x, p.y, rand(-40, 40), rand(-40, 40), 0.25, this.theme.wall, 2.2);
+        }
+      } else {
+        this._wallHit = false;
+      }
     }
 
-    // ---- 3) 玩家武器: 直接调用 Player._updateWeapons, 与无限模式完全一致 ----
-    // (blaster 自动瞄敌开火; 未解锁的其它武器 count=0, 内部会跳过)
+    // ---- 3) 玩家武器 ----
     p._updateWeapons(dt, g);
 
-    // ---- 4) 敌人生成 ----
-    this._spawnT -= dt;
-    if (this._spawnT <= 0) {
-      this._spawnT += this._spawnInterval;
-      this._spawnWave();
+    // ---- 4) 阶段专属调度: 通道刷杂兵, finale 推 Boss 战 ----
+    if (this.phase === "finale") {
+      this._updateFinale(dt);
+    } else {
+      this._spawnT -= dt;
+      if (this._spawnT <= 0) {
+        this._spawnT += this._spawnInterval;
+        this._spawnWave();
+      }
     }
 
     // ---- 5) 敌人 AI + 网格重建 (复用无限模式 Enemy.update) ----
@@ -363,24 +500,22 @@ export class LevelRunner {
     g._projPool.reclaim();
     g._ebPool.reclaim();
 
-    // ---- 11) 通关判定: 抵达终点 ----
-    if (p.y <= this.finish.y + FINISH_PAD) {
-      const got = this.stars.filter((s) => s.got).length;
-      g.audio.bossKill && g.audio.bossKill();
-      g.screenFlash(0.7);
-      g.camera.shake(24);
-      g.particles.burst(p.x, p.y, this.theme.glow, 40, 320, 5, 1.0);
-      this._finish("clear", got);
+    // ---- 11) 通关判定:
+    //  corridor 阶段抵达路径终点 → 若有 finale 切入 Boss 战, 否则直接结算 clear.
+    //  finale 阶段的通关在 _updateFinale 内触发 _finish("clear", 3).
+    if (this.phase === "corridor" && p.y <= this.finish.y + FINISH_PAD) {
+      this._enterFinaleOrClear();
       return;
     }
 
-    // ---- 12) 超时失败 ----
+    // ---- 12) 超时失败: finale 段时间用尽也算失败, 但保留通道段获得的星数作保底 ----
     this.timeLeft -= dt;
     if (this.timeLeft <= 0) {
       this.timeLeft = 0;
       g.audio.gameover && g.audio.gameover();
       g.camera.shake(20);
-      this._finish("fail", 0);
+      const savedStars = this.phase === "finale" ? this.finale.corridorStars : 0;
+      this._finish("fail", savedStars);
     }
   }
 
@@ -392,9 +527,13 @@ export class LevelRunner {
 
     cam.begin(ctx);
     this._drawBackground(ctx);
-    this._drawCorridor(ctx);
-    this._drawMarkers(ctx);
-    this._drawStars(ctx);
+    if (this.phase === "finale") {
+      this._drawArena(ctx);
+    } else {
+      this._drawCorridor(ctx);
+      this._drawMarkers(ctx);
+      this._drawStars(ctx);
+    }
 
     // 敌人(在通道之上, 玩家之下), 完全复用 Enemy.render 的霓虹几何造型
     for (const e of g.enemies) if (cam.inView(e.x, e.y)) e.render(ctx);
@@ -573,6 +712,34 @@ export class LevelRunner {
     }
   }
 
+  /** finale 阶段: 圆形竞技场——发光边环 + 深色地面, 与通道风格延续但区分明显 */
+  _drawArena(ctx) {
+    const a = this.finale.arena;
+    ctx.save();
+    // 深色地面
+    ctx.fillStyle = "#05070f";
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r + 6, 0, TAU); ctx.fill();
+    ctx.fillStyle = this.theme.floor;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, TAU); ctx.fill();
+    // 发光边环 + 脉动
+    const pulse = 0.5 + 0.5 * Math.sin(this.elapsed * 3);
+    ctx.strokeStyle = "#ff2bd6";
+    ctx.shadowBlur = 32; ctx.shadowColor = "#ff2bd6";
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = 6 + pulse * 3;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, TAU); ctx.stroke();
+    // 内圈装饰: 危险纹样
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = "#ff2bd6";
+    ctx.setLineDash([12, 18]);
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r * 0.72, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r * 0.38, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   /** 玩家无敌帧内做跳帧闪烁, 提示"当前不吃伤害" */
   _drawPlayer(ctx) {
     const p = this.game.player;
@@ -580,33 +747,47 @@ export class LevelRunner {
     p.render(ctx);
   }
 
-  /** 屏幕空间 HUD: 关卡名 / 倒计时 / 星星进度 / 生命值(三颗心) */
+  /** 屏幕空间 HUD: 关卡名 / 倒计时 / 星星进度 / 生命值 / (finale 阶段的 Boss 血条) */
   _drawHud(ctx) {
     const W2 = this.game.viewW;
     const got = this.stars.filter((s) => s.got).length;
     const total = this.stars.length;
     const t = Math.max(0, this.timeLeft);
     const urgent = t <= 6;
+    const inFinale = this.phase === "finale";
 
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillStyle = "#8fa9c8";
+    ctx.fillStyle = inFinale ? "#ff6b7d" : "#8fa9c8";
     ctx.font = "600 13px 'JetBrains Mono', monospace";
-    ctx.fillText(`${this.level.id}  ${this.level.name}`, W2 / 2, 16);
+    const title = inFinale
+      ? `${this.level.id}  ${this.level.name}  ·  终章决战`
+      : `${this.level.id}  ${this.level.name}`;
+    ctx.fillText(title, W2 / 2, 16);
     ctx.font = "800 40px 'JetBrains Mono', monospace";
     ctx.fillStyle = urgent ? "#ff6b7d" : "#e8f6ff";
     ctx.shadowBlur = 16;
     ctx.shadowColor = urgent ? "#ff2bd6" : "#00f0ff";
     ctx.fillText(t.toFixed(1), W2 / 2, 34);
-    ctx.shadowBlur = 10; ctx.shadowColor = "#ffd23f";
-    ctx.font = "700 24px 'JetBrains Mono', monospace";
-    let stars = "";
-    for (let i = 0; i < total; i++) stars += i < got ? "★" : "☆";
-    ctx.fillStyle = "#ffd23f";
-    ctx.fillText(stars, W2 / 2, 84);
+    // 星星进度: finale 阶段固定显示"击败 x/N Boss"
+    ctx.shadowBlur = 10;
+    ctx.font = "700 22px 'JetBrains Mono', monospace";
+    if (inFinale) {
+      ctx.shadowColor = "#ff2bd6";
+      ctx.fillStyle = "#ff2bd6";
+      ctx.fillText(`Boss ${this.finale.killed} / ${this.finale.total}`, W2 / 2, 86);
+    } else {
+      ctx.shadowColor = "#ffd23f";
+      ctx.fillStyle = "#ffd23f";
+      let stars = "";
+      for (let i = 0; i < total; i++) stars += i < got ? "★" : "☆";
+      ctx.font = "700 24px 'JetBrains Mono', monospace";
+      ctx.fillText(stars, W2 / 2, 84);
+    }
     ctx.restore();
 
+    // 生命值心形
     ctx.save();
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
@@ -620,6 +801,43 @@ export class LevelRunner {
       ctx.fillStyle = alive ? "#ff4a7f" : "#3a2130";
       ctx.fillText("♥", 20 + i * 30, 18);
     }
+    ctx.restore();
+
+    // finale 阶段: 顶部横向 Boss 血条(当前 Boss)
+    if (inFinale && this.finale.active && this.finale.active.active) {
+      this._drawBossBar(ctx, this.finale.active, W2);
+    }
+  }
+
+  /** 简洁的顶部 Boss 血条 + 名称, 独立于生存模式 HUD 的 _bossBars */
+  _drawBossBar(ctx, boss, W2) {
+    const w = Math.min(560, W2 * 0.6);
+    const x = (W2 - w) / 2;
+    const y = 120;
+    const h = 12;
+    const ratio = Math.max(0, boss.hp / boss.maxHp);
+    const color = boss.color || "#ff2bd6";
+    const name = (boss.def && boss.def.name) || "Boss";
+    ctx.save();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "700 14px 'JetBrains Mono', monospace";
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 10; ctx.shadowColor = color;
+    ctx.fillText(`⚠ ${name}  ${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`, x, y - 6);
+    ctx.shadowBlur = 0;
+    // 底槽
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(x, y, w, h);
+    // 前景
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 14; ctx.shadowColor = color;
+    ctx.fillRect(x, y, w * ratio, h);
+    // 描边
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     ctx.restore();
   }
 }
